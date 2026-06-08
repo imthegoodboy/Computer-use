@@ -459,6 +459,7 @@ Recovery policy:
 - Lightweight healthcheck: `list_windows` or `list_apps`.
 - If helper times out, restart broker once.
 - If window stale, rehydrate from latest app/window list.
+- Use the saved `window_ref` identity first, then refresh state and retry only when recovery returns one unambiguous target.
 - If minimized, restore/activate once, refresh, retry capture.
 - If activation denied, ask user to bring window forward or use an isolated desktop/VM.
 - If input blocked by UIPI, report integrity mismatch; do not elevate silently.

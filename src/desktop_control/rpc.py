@@ -14,7 +14,7 @@ from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, se
 from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
-from .windows import list_windows
+from .windows import list_windows, resolve_window_ref
 
 
 def _rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -340,7 +340,46 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         result["window"] = window.to_dict()
         return result
 
+    if method == "recover_window":
+        ref = _window_ref_from_params(params)
+        window = resolve_window_ref(
+            ref,
+            include_hidden=bool(params.get("include_hidden", False)),
+            allow_ambiguous=bool(params.get("allow_ambiguous", False)),
+        )
+        return {
+            "ok": True,
+            "action": "recover_window",
+            "input_ref": ref,
+            "window": window.to_dict(),
+        }
+
     raise DesktopControlError("method_not_found", f"Unknown method: {method}")
+
+
+def _window_ref_from_params(params: dict[str, Any]) -> dict[str, Any]:
+    raw_ref = params.get("window_ref")
+    if isinstance(raw_ref, dict):
+        return dict(raw_ref)
+    ref: dict[str, Any] = {}
+    for param_name, ref_name in (
+        ("window_id", "hwnd"),
+        ("hwnd", "hwnd"),
+        ("process_id", "process_id"),
+        ("process_name", "process_name"),
+        ("title", "title"),
+        ("title_contains", "title_contains"),
+        ("class_name", "class_name"),
+    ):
+        value = params.get(param_name)
+        if value not in (None, ""):
+            ref[ref_name] = value
+    if not ref:
+        raise DesktopControlError(
+            "invalid_window_ref",
+            "recover_window requires window_ref or at least one identity field",
+        )
+    return ref
 
 
 def _selector_from_params(params: dict[str, Any]) -> dict[str, Any]:

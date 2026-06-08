@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .snapshot import stable_snapshot_id
 
@@ -46,6 +47,16 @@ class WindowInfo:
     minimized: bool
     client_rect: Rect | None = None
 
+    def window_ref(self) -> dict[str, Any]:
+        return {
+            "hwnd": self.hwnd,
+            "process_id": self.process_id,
+            "process_name": self.process_name,
+            "title": self.title,
+            "class_name": self.class_name,
+            "snapshot_id": self.snapshot_id(),
+        }
+
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "hwnd": self.hwnd,
@@ -60,6 +71,7 @@ class WindowInfo:
         if self.client_rect is not None:
             payload["client_rect"] = self.client_rect.to_dict()
         payload["snapshot_id"] = self.snapshot_id()
+        payload["window_ref"] = self.window_ref()
         return payload
 
     def snapshot_payload(self) -> dict[str, object]:

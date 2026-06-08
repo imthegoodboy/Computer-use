@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import time
+from typing import Any, Mapping
 from typing import Literal
 
 import psutil
@@ -69,6 +70,137 @@ def _window_info(hwnd: int) -> WindowInfo:
 
 def get_window(hwnd: int) -> WindowInfo:
     return _window_info(hwnd)
+
+
+def _text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _text_lc(value: object) -> str:
+    return _text(value).casefold()
+
+
+def _ref_int(ref: Mapping[str, Any], key: str) -> int | None:
+    value = ref.get(key)
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise DesktopControlError(
+            "invalid_window_ref",
+            f"Window ref field {key} must be an integer",
+            {"field": key, "value": value},
+        ) from exc
+
+
+def _ref_matches_identity(info: WindowInfo, ref: Mapping[str, Any]) -> bool:
+    process_name = _text_lc(ref.get("process_name"))
+    title = _text_lc(ref.get("title"))
+    title_contains = _text_lc(ref.get("title_contains"))
+    class_name = _text_lc(ref.get("class_name"))
+
+    if process_name and _text_lc(info.process_name) != process_name:
+        return False
+    if title and _text_lc(info.title) != title:
+        return False
+    if title_contains and title_contains not in _text_lc(info.title):
+        return False
+    if class_name and not any((process_name, title, title_contains)) and _text_lc(info.class_name) != class_name:
+        return False
+    return True
+
+
+def _exact_ref_matches_identity(info: WindowInfo, ref: Mapping[str, Any]) -> bool:
+    if not _ref_matches_identity(info, ref):
+        return False
+    process_id = _ref_int(ref, "process_id")
+    if process_id is not None and int(info.process_id) != process_id:
+        return False
+    return True
+
+
+def _window_ref_score(info: WindowInfo, ref: Mapping[str, Any]) -> int:
+    if not _ref_matches_identity(info, ref):
+        return -1
+
+    score = 0
+    hwnd = _ref_int(ref, "hwnd")
+    process_id = _ref_int(ref, "process_id")
+    snapshot_id = _text(ref.get("snapshot_id"))
+    if hwnd is not None and int(info.hwnd) == hwnd:
+        score += 1000
+    if _text_lc(ref.get("process_name")) and _text_lc(info.process_name) == _text_lc(ref.get("process_name")):
+        score += 250
+    if _text_lc(ref.get("title")) and _text_lc(info.title) == _text_lc(ref.get("title")):
+        score += 300
+    if _text_lc(ref.get("title_contains")) and _text_lc(ref.get("title_contains")) in _text_lc(info.title):
+        score += 125
+    if _text_lc(ref.get("class_name")) and _text_lc(info.class_name) == _text_lc(ref.get("class_name")):
+        score += 175
+    if process_id is not None and int(info.process_id) == process_id:
+        score += 80
+    if snapshot_id and info.snapshot_id() == snapshot_id:
+        score += 60
+    if info.visible:
+        score += 10
+    if not info.minimized:
+        score += 5
+    return score
+
+
+def resolve_window_ref(
+    ref: Mapping[str, Any],
+    *,
+    include_hidden: bool = False,
+    allow_ambiguous: bool = False,
+) -> WindowInfo:
+    if not isinstance(ref, Mapping):
+        raise DesktopControlError("invalid_window_ref", "Window ref must be an object")
+    if not any(_text(ref.get(key)) for key in ("hwnd", "process_id", "process_name", "title", "title_contains", "class_name")):
+        raise DesktopControlError(
+            "invalid_window_ref",
+            "Window ref must include at least one identity field",
+            {"accepted_fields": ["hwnd", "process_id", "process_name", "title", "title_contains", "class_name"]},
+        )
+
+    hwnd = _ref_int(ref, "hwnd")
+    if hwnd is not None:
+        try:
+            exact = get_window(hwnd)
+        except DesktopControlError:
+            exact = None
+        if exact is not None and _exact_ref_matches_identity(exact, ref):
+            return exact
+
+    candidates: list[tuple[int, WindowInfo]] = []
+    for window in list_windows(include_hidden=include_hidden):
+        score = _window_ref_score(window, ref)
+        if score >= 0:
+            candidates.append((score, window))
+
+    candidates.sort(key=lambda item: (item[0], item[1].visible, -item[1].hwnd), reverse=True)
+    if not candidates:
+        raise DesktopControlError(
+            "window_recovery_failed",
+            "Could not recover a matching window from the provided ref",
+            {"window_ref": dict(ref)},
+        )
+
+    best_score, best = candidates[0]
+    tied = [window for score, window in candidates[1:] if score == best_score]
+    if tied and not allow_ambiguous:
+        raise DesktopControlError(
+            "window_recovery_ambiguous",
+            "Multiple windows matched the provided ref with equal confidence",
+            {
+                "window_ref": dict(ref),
+                "score": best_score,
+                "matches": [best.to_dict(), *[window.to_dict() for window in tied[:4]]],
+            },
+        )
+
+    return best
 
 
 def list_windows(include_hidden: bool = False, query: str | None = None) -> list[WindowInfo]:

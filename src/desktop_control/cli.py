@@ -21,6 +21,7 @@ from .windows import (
     get_window,
     list_windows,
     require_point_in_window,
+    resolve_window_ref,
     resolve_point,
 )
 
@@ -204,6 +205,41 @@ def _selector_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return selector
 
 
+def _extract_window_ref_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise DesktopControlError("invalid_window_ref", "Window ref payload must be a JSON object")
+    if isinstance(payload.get("window_ref"), dict):
+        return dict(payload["window_ref"])
+    if isinstance(payload.get("window"), dict):
+        return _extract_window_ref_payload(payload["window"])
+    return dict(payload)
+
+
+def _window_ref_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    if args.ref_file:
+        payload = json.loads(Path(args.ref_file).read_text(encoding="utf-8-sig"))
+        return _extract_window_ref_payload(payload)
+
+    ref: dict[str, Any] = {}
+    for arg_name, ref_name in (
+        ("window_id", "hwnd"),
+        ("process_id", "process_id"),
+        ("process_name", "process_name"),
+        ("title", "title"),
+        ("title_contains", "title_contains"),
+        ("class_name", "class_name"),
+    ):
+        value = getattr(args, arg_name, None)
+        if value not in (None, ""):
+            ref[ref_name] = value
+    if not ref:
+        raise DesktopControlError(
+            "invalid_window_ref",
+            "Use --ref-file or provide at least one direct window identity field",
+        )
+    return ref
+
+
 def command_find_elements(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "find_elements", activate=False)
     selector = _selector_from_args(args)
@@ -287,6 +323,21 @@ def command_wait_element(args: argparse.Namespace) -> dict[str, Any]:
     )
     result["window"] = window.to_dict()
     return result
+
+
+def command_recover_window(args: argparse.Namespace) -> dict[str, Any]:
+    window_ref = _window_ref_from_args(args)
+    window = resolve_window_ref(
+        window_ref,
+        include_hidden=args.include_hidden,
+        allow_ambiguous=args.allow_ambiguous,
+    )
+    return {
+        "ok": True,
+        "action": "recover_window",
+        "input_ref": window_ref,
+        "window": window.to_dict(),
+    }
 
 
 def command_approve_app(args: argparse.Namespace) -> dict[str, Any]:
@@ -481,6 +532,19 @@ def build_parser() -> argparse.ArgumentParser:
     wait_element_parser.add_argument("--timeout", type=float, default=10.0)
     wait_element_parser.add_argument("--interval", type=float, default=0.1)
     wait_element_parser.set_defaults(func=command_wait_element)
+
+    recover_parser = subparsers.add_parser("recover-window", help="Recover the current window from a saved window_ref")
+    recover_parser.add_argument("--ref-file", help="JSON file containing a window_ref, window, or full command result")
+    recover_parser.add_argument("--window-id", type=int, help="Known HWND to validate before fallback matching")
+    recover_parser.add_argument("--process-id", type=int)
+    recover_parser.add_argument("--process-name")
+    recover_parser.add_argument("--title")
+    recover_parser.add_argument("--title-contains")
+    recover_parser.add_argument("--class-name")
+    recover_parser.add_argument("--include-hidden", action="store_true")
+    recover_parser.add_argument("--allow-ambiguous", action="store_true")
+    recover_parser.add_argument("--pretty", action="store_true")
+    recover_parser.set_defaults(func=command_recover_window)
 
     approve_app_parser = subparsers.add_parser("approve-app", help="Approve a process name for controlled actions")
     approve_app_parser.add_argument("--process-name", required=True)

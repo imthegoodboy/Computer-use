@@ -95,12 +95,64 @@ def test_rpc_batch_rejects_nested_batch():
     assert response["error"]["data"]["details"]["results"][0]["error"]["code"] == "invalid_request"
 
 
+def test_rpc_recovers_window_ref(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=44,
+        title="Recovered",
+        process_id=12,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 200, 100),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 200, 100),
+    )
+    captured = {}
+
+    def fake_resolve(ref, include_hidden=False, allow_ambiguous=False):
+        captured["ref"] = ref
+        captured["include_hidden"] = include_hidden
+        captured["allow_ambiguous"] = allow_ambiguous
+        return target
+
+    monkeypatch.setattr(rpc, "resolve_window_ref", fake_resolve)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "recover_window",
+            "params": {
+                "window_ref": {"process_name": "target.exe", "title": "Recovered"},
+                "include_hidden": True,
+            },
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["window"]["hwnd"] == 44
+    assert captured == {
+        "ref": {"process_name": "target.exe", "title": "Recovered"},
+        "include_hidden": True,
+        "allow_ambiguous": False,
+    }
+
+
+def test_rpc_recover_window_requires_identity():
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 9, "method": "recover_window", "params": {}})
+    assert response is not None
+    assert response["error"]["data"]["desktop_code"] == "invalid_window_ref"
+
+
 def test_json_rpc_batch_payload_returns_multiple_responses():
     response = handle_rpc_payload(
         [
-            {"jsonrpc": "2.0", "id": 8, "method": "list_windows", "params": {"query": "a"}},
-            {"jsonrpc": "2.0", "id": 9, "method": "list_windows", "params": {"query": "b"}},
+            {"jsonrpc": "2.0", "id": 10, "method": "list_windows", "params": {"query": "a"}},
+            {"jsonrpc": "2.0", "id": 11, "method": "list_windows", "params": {"query": "b"}},
         ]
     )
     assert isinstance(response, list)
-    assert [item["id"] for item in response] == [8, 9]
+    assert [item["id"] for item in response] == [10, 11]

@@ -16,6 +16,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Find, click, invoke, and set values on Windows UI Automation elements.
 - Wait for matching windows or UI Automation elements without blind sleeps.
 - Reject stale action coordinates when an expected `snapshot_id` no longer matches current window state.
+- Return a reusable `window_ref` and recover a current window when the original handle is stale.
 - Batch multiple actions in one CLI/RPC call for lower overhead.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
@@ -39,6 +40,7 @@ python -m desktop_control screenshot --window-id 123456 --out .tmp\notepad.png -
 python -m desktop_control click --window-id 123456 --x 120 --y 90 --expect-snapshot-id <snapshot_id> --pretty
 python -m desktop_control find-elements --window-id 123456 --name-contains "Save" --pretty
 python -m desktop_control wait-element --window-id 123456 --name "OK" --control-type button --timeout 5 --pretty
+python -m desktop_control recover-window --ref-file .tmp\window-ref.json --pretty
 python -m desktop_control click-element --window-id 123456 --name "OK" --control-type button --pretty
 python -m desktop_control type-text --window-id 123456 --text "hello from desktop-control" --pretty
 python -m desktop_control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
@@ -80,7 +82,18 @@ Send one JSON-RPC request per line:
 {"jsonrpc":"2.0","id":1,"method":"list_windows","params":{"query":"notepad"}}
 ```
 
-Supported methods are `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, and `wait_element`.
+Supported methods are `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+
+## Window Recovery
+
+Every window payload includes a `window_ref` with `hwnd`, process metadata, title, class name, and snapshot id. If a later action fails because the `hwnd` is stale, recover the current window explicitly:
+
+```powershell
+python -m desktop_control state --window-id 123456 --pretty
+python -m desktop_control recover-window --process-name notepad.exe --title "Untitled - Notepad" --pretty
+```
+
+The resolver validates the original `hwnd` when possible, then falls back to visible windows that match process/title/class identity. Ambiguous matches fail unless `--allow-ambiguous` is passed.
 
 ## Batch Actions
 
@@ -176,4 +189,10 @@ For capture reliability:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_capture.ps1
+```
+
+For stale-window recovery:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_recovery.ps1
 ```
