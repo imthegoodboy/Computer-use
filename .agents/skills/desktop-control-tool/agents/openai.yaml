@@ -1,0 +1,4 @@
+interface:
+  display_name: "Desktop Control Tool"
+  short_description: "Build and operate fast, safe desktop-control tools for agents."
+  default_prompt: "Use this skill to design, build, or operate a Windows computer-use style desktop-control tool for an agent."
