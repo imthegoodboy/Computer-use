@@ -13,6 +13,7 @@ from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
 from .policy import assert_allowed_target
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
+from .wait import wait_for_element, wait_for_window
 from .windows import (
     CoordinateSpace,
     activate_window,
@@ -251,6 +252,29 @@ def command_set_element_value(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def command_wait_window(args: argparse.Namespace) -> dict[str, Any]:
+    return wait_for_window(
+        query=args.query,
+        timeout_seconds=args.timeout,
+        interval_seconds=args.interval,
+        include_hidden=args.include_hidden,
+    )
+
+
+def command_wait_element(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "wait_element", activate=False)
+    result = wait_for_element(
+        args.window_id,
+        _selector_from_args(args),
+        timeout_seconds=args.timeout,
+        interval_seconds=args.interval,
+        max_depth=args.max_depth,
+        max_nodes=args.max_nodes,
+    )
+    result["window"] = window.to_dict()
+    return result
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -381,6 +405,20 @@ def build_parser() -> argparse.ArgumentParser:
     set_element_parser.add_argument("--fallback-text-method", choices=["clipboard", "unicode"], default="clipboard")
     set_element_parser.add_argument("--no-activate", action="store_true")
     set_element_parser.set_defaults(func=command_set_element_value)
+
+    wait_window_parser = subparsers.add_parser("wait-window", help="Wait for a matching top-level window")
+    wait_window_parser.add_argument("--query")
+    wait_window_parser.add_argument("--timeout", type=float, default=10.0)
+    wait_window_parser.add_argument("--interval", type=float, default=0.1)
+    wait_window_parser.add_argument("--include-hidden", action="store_true")
+    wait_window_parser.add_argument("--pretty", action="store_true")
+    wait_window_parser.set_defaults(func=command_wait_window)
+
+    wait_element_parser = subparsers.add_parser("wait-element", help="Wait for a matching UI Automation element")
+    add_uia_selector_args(wait_element_parser)
+    wait_element_parser.add_argument("--timeout", type=float, default=10.0)
+    wait_element_parser.add_argument("--interval", type=float, default=0.1)
+    wait_element_parser.set_defaults(func=command_wait_element)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)

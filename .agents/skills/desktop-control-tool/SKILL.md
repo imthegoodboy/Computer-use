@@ -57,6 +57,8 @@ python -m desktop_control state --window-id <hwnd> --include-ui --pretty
 python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --pretty
 python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --pretty
 python -m desktop_control find-elements --window-id <hwnd> --name-contains "Save" --pretty
+python -m desktop_control wait-window --query "Notepad" --timeout 5 --pretty
+python -m desktop_control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty
 python -m desktop_control click-element --window-id <hwnd> --name "OK" --control-type button --pretty
 python -m desktop_control set-element-value --window-id <hwnd> --control-type edit --value "text" --pretty
 python -m desktop_control invoke-element --window-id <hwnd> --name "Apply" --control-type button --pretty
@@ -65,7 +67,7 @@ python -m desktop_control key --window-id <hwnd> --keys ctrl+a --keys backspace 
 python -m desktop_control serve-stdio
 ```
 
-The stdio server accepts JSON-RPC methods `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, and `set_element_value`.
+The stdio server accepts JSON-RPC methods `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, and `wait_element`.
 
 ## Performance Rules
 

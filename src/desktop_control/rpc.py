@@ -12,6 +12,7 @@ from .cli import _resolve_checked_point, _window_for_action
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
+from .wait import wait_for_element, wait_for_window
 from .windows import list_windows
 
 
@@ -212,6 +213,29 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
             max_depth=int(params.get("max_depth", 6)),
             max_nodes=int(params.get("max_nodes", 500)),
             fallback_text_method=str(params.get("fallback_text_method", "clipboard")),
+        )
+        result["window"] = window.to_dict()
+        return result
+
+    if method == "wait_window":
+        return wait_for_window(
+            query=params.get("query"),
+            timeout_seconds=float(params.get("timeout", 10.0)),
+            interval_seconds=float(params.get("interval", 0.1)),
+            include_hidden=bool(params.get("include_hidden", False)),
+        )
+
+    if method == "wait_element":
+        hwnd = int(_require(params, "window_id"))
+        selector = _selector_from_params(params)
+        window = _window_for_action(hwnd, "wait_element", activate=False)
+        result = wait_for_element(
+            hwnd,
+            selector,
+            timeout_seconds=float(params.get("timeout", 10.0)),
+            interval_seconds=float(params.get("interval", 0.1)),
+            max_depth=int(params.get("max_depth", 6)),
+            max_nodes=int(params.get("max_nodes", 500)),
         )
         result["window"] = window.to_dict()
         return result
