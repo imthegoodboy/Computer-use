@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .snapshot import stable_snapshot_id
+
 
 @dataclass(frozen=True)
 class Rect:
@@ -57,4 +59,23 @@ class WindowInfo:
         }
         if self.client_rect is not None:
             payload["client_rect"] = self.client_rect.to_dict()
+        payload["snapshot_id"] = self.snapshot_id()
         return payload
+
+    def snapshot_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "hwnd": self.hwnd,
+            "title": self.title,
+            "process_id": self.process_id,
+            "process_name": self.process_name,
+            "class_name": self.class_name,
+            "rect": self.rect.to_dict(),
+            "visible": self.visible,
+            "minimized": self.minimized,
+        }
+        if self.client_rect is not None:
+            payload["client_rect"] = self.client_rect.to_dict()
+        return payload
+
+    def snapshot_id(self) -> str:
+        return stable_snapshot_id(self.snapshot_payload())

@@ -11,6 +11,7 @@ from .capture import capture_window
 from .cli import _resolve_checked_point, _window_for_action
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
+from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
 from .windows import list_windows
@@ -40,6 +41,11 @@ def _require(params: dict[str, Any], key: str) -> Any:
     if key not in params:
         raise DesktopControlError("invalid_request", f"Missing required parameter: {key}")
     return params[key]
+
+
+def _enforce_expected_snapshot(window, params: dict[str, Any]) -> None:
+    expected = params.get("expect_snapshot_id")
+    assert_expected_snapshot(window.snapshot_id(), str(expected) if expected is not None else None)
 
 
 def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +86,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "click":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "click", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
             hwnd,
             int(_require(params, "x")),
@@ -92,6 +99,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "move":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "move", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
             hwnd,
             int(_require(params, "x")),
@@ -104,6 +112,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "scroll":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "scroll", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
             hwnd,
             int(_require(params, "x")),
@@ -116,6 +125,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "drag":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "drag", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         from_x, from_y = _resolve_checked_point(
             hwnd,
             int(_require(params, "from_x")),
@@ -142,6 +152,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "type_text":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "type_text", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         text = str(params.get("text", ""))
         if params.get("text_file"):
             text = Path(str(params["text_file"])).read_text(encoding="utf-8")
@@ -152,6 +163,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "key":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "key", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         keys = params.get("keys")
         if not isinstance(keys, list) or not keys:
             raise DesktopControlError("invalid_request", "keys must be a non-empty list")
@@ -177,6 +189,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "click_element":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "click_element", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         result = click_uia_element(
             hwnd,
             _selector_from_params(params),
@@ -191,6 +204,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "invoke_element":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "invoke_element", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         result = invoke_uia_element(
             hwnd,
             _selector_from_params(params),
@@ -203,6 +217,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method == "set_element_value":
         hwnd = int(_require(params, "window_id"))
         window = _window_for_action(hwnd, "set_element_value", activate=bool(params.get("activate", True)))
+        _enforce_expected_snapshot(window, params)
         value = str(params.get("value", ""))
         if params.get("value_file"):
             value = Path(str(params["value_file"])).read_text(encoding="utf-8")

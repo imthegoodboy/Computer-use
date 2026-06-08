@@ -58,7 +58,7 @@ python -m desktop_control list-windows --pretty
 python -m desktop_control approve-app --process-name notepad.exe --pretty
 python -m desktop_control state --window-id <hwnd> --include-ui --pretty
 python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --pretty
-python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --pretty
+python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --expect-snapshot-id <snapshot_id> --pretty
 python -m desktop_control find-elements --window-id <hwnd> --name-contains "Save" --pretty
 python -m desktop_control wait-window --query "Notepad" --timeout 5 --pretty
 python -m desktop_control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty

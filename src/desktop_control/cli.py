@@ -12,6 +12,7 @@ from .capture import capture_window
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
 from .policy import approve_process_name, approve_window, assert_allowed_target, load_approvals
+from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
 from .windows import (
@@ -53,6 +54,10 @@ def _window_for_action(hwnd: int, action: str, activate: bool = True):
     return window
 
 
+def _enforce_expected_snapshot(window, expected_snapshot_id: str | None) -> None:
+    assert_expected_snapshot(window.snapshot_id(), expected_snapshot_id)
+
+
 def _resolve_checked_point(hwnd: int, x: int, y: int, space: CoordinateSpace) -> tuple[int, int]:
     screen_x, screen_y = resolve_point(hwnd, x, y, space)
     require_point_in_window(hwnd, screen_x, screen_y)
@@ -92,6 +97,7 @@ def command_screenshot(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_click(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "click", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     x, y = _resolve_checked_point(args.window_id, args.x, args.y, args.space)
     click_at(x, y, button=args.button, count=args.count)
     return {
@@ -106,6 +112,7 @@ def command_click(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_move(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "move", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     x, y = _resolve_checked_point(args.window_id, args.x, args.y, args.space)
     move_to(x, y)
     return {
@@ -118,6 +125,7 @@ def command_move(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_scroll(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "scroll", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     x, y = _resolve_checked_point(args.window_id, args.x, args.y, args.space)
     scroll_at(x, y, args.delta)
     return {
@@ -131,6 +139,7 @@ def command_scroll(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_drag(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "drag", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     from_x, from_y = _resolve_checked_point(args.window_id, args.from_x, args.from_y, args.space)
     to_x, to_y = _resolve_checked_point(args.window_id, args.to_x, args.to_y, args.space)
     drag_at(
@@ -154,6 +163,7 @@ def command_drag(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_type_text(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "type_text", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     text = args.text
     if args.text_file:
         text = Path(args.text_file).read_text(encoding="utf-8")
@@ -169,6 +179,7 @@ def command_type_text(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_key(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "key", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     press_key_sequence(args.keys)
     return {
         "ok": True,
@@ -211,6 +222,7 @@ def command_find_elements(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_click_element(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "click_element", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     result = click_uia_element(
         args.window_id,
         _selector_from_args(args),
@@ -225,6 +237,7 @@ def command_click_element(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_invoke_element(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "invoke_element", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     result = invoke_uia_element(
         args.window_id,
         _selector_from_args(args),
@@ -237,6 +250,7 @@ def command_invoke_element(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_set_element_value(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "set_element_value", activate=not args.no_activate)
+    _enforce_expected_snapshot(window, args.expect_snapshot_id)
     value = args.value
     if args.value_file:
         value = Path(args.value_file).read_text(encoding="utf-8")
@@ -334,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     click_parser.add_argument("--button", choices=["left", "right", "middle"], default="left")
     click_parser.add_argument("--count", type=int, default=1)
     click_parser.add_argument("--no-activate", action="store_true")
+    click_parser.add_argument("--expect-snapshot-id")
     click_parser.add_argument("--pretty", action="store_true")
     click_parser.set_defaults(func=command_click)
 
@@ -343,6 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
     move_parser.add_argument("--y", type=int, required=True)
     move_parser.add_argument("--space", type=_space, default="window")
     move_parser.add_argument("--no-activate", action="store_true")
+    move_parser.add_argument("--expect-snapshot-id")
     move_parser.add_argument("--pretty", action="store_true")
     move_parser.set_defaults(func=command_move)
 
@@ -353,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     scroll_parser.add_argument("--space", type=_space, default="window")
     scroll_parser.add_argument("--delta", type=int, required=True, help="Wheel ticks; positive scrolls up")
     scroll_parser.add_argument("--no-activate", action="store_true")
+    scroll_parser.add_argument("--expect-snapshot-id")
     scroll_parser.add_argument("--pretty", action="store_true")
     scroll_parser.set_defaults(func=command_scroll)
 
@@ -367,6 +384,7 @@ def build_parser() -> argparse.ArgumentParser:
     drag_parser.add_argument("--duration", type=float, default=0.2)
     drag_parser.add_argument("--steps", type=int, default=12)
     drag_parser.add_argument("--no-activate", action="store_true")
+    drag_parser.add_argument("--expect-snapshot-id")
     drag_parser.add_argument("--pretty", action="store_true")
     drag_parser.set_defaults(func=command_drag)
 
@@ -376,6 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
     type_parser.add_argument("--text-file")
     type_parser.add_argument("--method", choices=["clipboard", "unicode"], default="clipboard")
     type_parser.add_argument("--no-activate", action="store_true")
+    type_parser.add_argument("--expect-snapshot-id")
     type_parser.add_argument("--pretty", action="store_true")
     type_parser.set_defaults(func=command_type_text)
 
@@ -383,6 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     key_parser.add_argument("--window-id", type=int, required=True)
     key_parser.add_argument("--keys", action="append", required=True, help="Example: ctrl+a, enter, alt+f4")
     key_parser.add_argument("--no-activate", action="store_true")
+    key_parser.add_argument("--expect-snapshot-id")
     key_parser.add_argument("--pretty", action="store_true")
     key_parser.set_defaults(func=command_key)
 
@@ -408,11 +428,13 @@ def build_parser() -> argparse.ArgumentParser:
     click_element_parser.add_argument("--button", choices=["left", "right", "middle"], default="left")
     click_element_parser.add_argument("--count", type=int, default=1)
     click_element_parser.add_argument("--no-activate", action="store_true")
+    click_element_parser.add_argument("--expect-snapshot-id")
     click_element_parser.set_defaults(func=command_click_element)
 
     invoke_element_parser = subparsers.add_parser("invoke-element", help="Invoke a UI Automation element")
     add_uia_selector_args(invoke_element_parser)
     invoke_element_parser.add_argument("--no-activate", action="store_true")
+    invoke_element_parser.add_argument("--expect-snapshot-id")
     invoke_element_parser.set_defaults(func=command_invoke_element)
 
     set_element_parser = subparsers.add_parser("set-element-value", help="Set a UI Automation element value")
@@ -421,6 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_element_parser.add_argument("--value-file")
     set_element_parser.add_argument("--fallback-text-method", choices=["clipboard", "unicode"], default="clipboard")
     set_element_parser.add_argument("--no-activate", action="store_true")
+    set_element_parser.add_argument("--expect-snapshot-id")
     set_element_parser.set_defaults(func=command_set_element_value)
 
     wait_window_parser = subparsers.add_parser("wait-window", help="Wait for a matching top-level window")

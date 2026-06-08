@@ -30,3 +30,33 @@ def test_rpc_rejects_missing_wait_element_selector():
     assert response["id"] == 4
     assert response["error"]["code"] == -32000
     assert response["error"]["data"]["desktop_code"] == "invalid_selector"
+
+
+def test_rpc_rejects_stale_snapshot_before_keypress(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=1,
+        title="Target",
+        process_id=10,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 200, 100),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 200, 100),
+    )
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=True: target)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "key",
+            "params": {"window_id": 1, "keys": ["enter"], "expect_snapshot_id": "bad"},
+        }
+    )
+    assert response is not None
+    assert response["id"] == 5
+    assert response["error"]["data"]["desktop_code"] == "stale_snapshot"

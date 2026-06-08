@@ -14,6 +14,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Move, click, drag, scroll, type text, and press key chords.
 - Find, click, invoke, and set values on Windows UI Automation elements.
 - Wait for matching windows or UI Automation elements without blind sleeps.
+- Reject stale action coordinates when an expected `snapshot_id` no longer matches current window state.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
 - Keep a warm JSON-RPC stdio process for agent integrations.
@@ -33,7 +34,7 @@ Find a safe window such as Notepad, then use its `hwnd`:
 ```powershell
 python -m desktop_control state --window-id 123456 --include-ui --pretty
 python -m desktop_control screenshot --window-id 123456 --out .tmp\notepad.png --pretty
-python -m desktop_control click --window-id 123456 --x 120 --y 90 --pretty
+python -m desktop_control click --window-id 123456 --x 120 --y 90 --expect-snapshot-id <snapshot_id> --pretty
 python -m desktop_control find-elements --window-id 123456 --name-contains "Save" --pretty
 python -m desktop_control wait-element --window-id 123456 --name "OK" --control-type button --timeout 5 --pretty
 python -m desktop_control click-element --window-id 123456 --name "OK" --control-type button --pretty
@@ -134,4 +135,10 @@ For approval enforcement:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_approvals.ps1
+```
+
+For stale-snapshot guards:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_snapshot.ps1
 ```
