@@ -10,7 +10,7 @@ from .capture import capture_window
 from .cli import _resolve_checked_point, _window_for_action
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
-from .uia import get_uia_tree
+from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .windows import list_windows
 
 
@@ -156,7 +156,80 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         press_key_sequence([str(key) for key in keys])
         return {"ok": True, "action": "key", "window": window.to_dict(), "keys": keys}
 
+    if method == "find_elements":
+        hwnd = int(_require(params, "window_id"))
+        selector = _selector_from_params(params)
+        window = _window_for_action(hwnd, "find_elements", activate=False)
+        return {
+            "ok": True,
+            "window": window.to_dict(),
+            "selector": selector,
+            "elements": find_uia_elements(
+                hwnd,
+                selector,
+                max_depth=int(params.get("max_depth", 6)),
+                max_nodes=int(params.get("max_nodes", 500)),
+            ),
+        }
+
+    if method == "click_element":
+        hwnd = int(_require(params, "window_id"))
+        window = _window_for_action(hwnd, "click_element", activate=bool(params.get("activate", True)))
+        result = click_uia_element(
+            hwnd,
+            _selector_from_params(params),
+            button=str(params.get("button", "left")),
+            count=int(params.get("count", 1)),
+            max_depth=int(params.get("max_depth", 6)),
+            max_nodes=int(params.get("max_nodes", 500)),
+        )
+        result["window"] = window.to_dict()
+        return result
+
+    if method == "invoke_element":
+        hwnd = int(_require(params, "window_id"))
+        window = _window_for_action(hwnd, "invoke_element", activate=bool(params.get("activate", True)))
+        result = invoke_uia_element(
+            hwnd,
+            _selector_from_params(params),
+            max_depth=int(params.get("max_depth", 6)),
+            max_nodes=int(params.get("max_nodes", 500)),
+        )
+        result["window"] = window.to_dict()
+        return result
+
+    if method == "set_element_value":
+        hwnd = int(_require(params, "window_id"))
+        window = _window_for_action(hwnd, "set_element_value", activate=bool(params.get("activate", True)))
+        value = str(params.get("value", ""))
+        if params.get("value_file"):
+            value = Path(str(params["value_file"])).read_text(encoding="utf-8")
+        result = set_uia_element_value(
+            hwnd,
+            _selector_from_params(params),
+            value,
+            max_depth=int(params.get("max_depth", 6)),
+            max_nodes=int(params.get("max_nodes", 500)),
+            fallback_text_method=str(params.get("fallback_text_method", "clipboard")),
+        )
+        result["window"] = window.to_dict()
+        return result
+
     raise DesktopControlError("method_not_found", f"Unknown method: {method}")
+
+
+def _selector_from_params(params: dict[str, Any]) -> dict[str, Any]:
+    raw_selector = params.get("selector")
+    if isinstance(raw_selector, dict):
+        selector = dict(raw_selector)
+    else:
+        selector = {}
+        for key in ("name", "name_contains", "automation_id", "class_name", "control_type", "index", "allow_multiple"):
+            if key in params:
+                selector[key] = params[key]
+    if not selector:
+        raise DesktopControlError("invalid_selector", "At least one UIA selector field is required")
+    return selector
 
 
 def handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:

@@ -11,7 +11,7 @@ from .capture import capture_window
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
 from .policy import assert_allowed_target
-from .uia import get_uia_tree
+from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .windows import (
     CoordinateSpace,
     activate_window,
@@ -170,6 +170,80 @@ def command_key(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _selector_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    selector: dict[str, Any] = {}
+    for key in ("name", "name_contains", "automation_id", "class_name", "control_type"):
+        value = getattr(args, key, None)
+        if value is not None:
+            selector[key] = value
+    if getattr(args, "allow_multiple", False):
+        selector["allow_multiple"] = True
+    if getattr(args, "index", None) is not None:
+        selector["index"] = args.index
+    if not selector:
+        raise DesktopControlError("invalid_selector", "At least one UIA selector field is required")
+    return selector
+
+
+def command_find_elements(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "find_elements", activate=False)
+    selector = _selector_from_args(args)
+    return {
+        "ok": True,
+        "window": window.to_dict(),
+        "selector": selector,
+        "elements": find_uia_elements(
+            args.window_id,
+            selector,
+            max_depth=args.max_depth,
+            max_nodes=args.max_nodes,
+        ),
+    }
+
+
+def command_click_element(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "click_element", activate=not args.no_activate)
+    result = click_uia_element(
+        args.window_id,
+        _selector_from_args(args),
+        button=args.button,
+        count=args.count,
+        max_depth=args.max_depth,
+        max_nodes=args.max_nodes,
+    )
+    result["window"] = window.to_dict()
+    return result
+
+
+def command_invoke_element(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "invoke_element", activate=not args.no_activate)
+    result = invoke_uia_element(
+        args.window_id,
+        _selector_from_args(args),
+        max_depth=args.max_depth,
+        max_nodes=args.max_nodes,
+    )
+    result["window"] = window.to_dict()
+    return result
+
+
+def command_set_element_value(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "set_element_value", activate=not args.no_activate)
+    value = args.value
+    if args.value_file:
+        value = Path(args.value_file).read_text(encoding="utf-8")
+    result = set_uia_element_value(
+        args.window_id,
+        _selector_from_args(args),
+        value,
+        max_depth=args.max_depth,
+        max_nodes=args.max_nodes,
+        fallback_text_method=args.fallback_text_method,
+    )
+    result["window"] = window.to_dict()
+    return result
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -263,6 +337,43 @@ def build_parser() -> argparse.ArgumentParser:
     key_parser.add_argument("--no-activate", action="store_true")
     key_parser.add_argument("--pretty", action="store_true")
     key_parser.set_defaults(func=command_key)
+
+    def add_uia_selector_args(target_parser: argparse.ArgumentParser) -> None:
+        target_parser.add_argument("--window-id", type=int, required=True)
+        target_parser.add_argument("--name")
+        target_parser.add_argument("--name-contains")
+        target_parser.add_argument("--automation-id")
+        target_parser.add_argument("--class-name")
+        target_parser.add_argument("--control-type")
+        target_parser.add_argument("--index", type=int)
+        target_parser.add_argument("--allow-multiple", action="store_true")
+        target_parser.add_argument("--max-depth", type=int, default=6)
+        target_parser.add_argument("--max-nodes", type=int, default=500)
+        target_parser.add_argument("--pretty", action="store_true")
+
+    find_elements_parser = subparsers.add_parser("find-elements", help="Find UI Automation elements")
+    add_uia_selector_args(find_elements_parser)
+    find_elements_parser.set_defaults(func=command_find_elements)
+
+    click_element_parser = subparsers.add_parser("click-element", help="Click the center of a UI Automation element")
+    add_uia_selector_args(click_element_parser)
+    click_element_parser.add_argument("--button", choices=["left", "right", "middle"], default="left")
+    click_element_parser.add_argument("--count", type=int, default=1)
+    click_element_parser.add_argument("--no-activate", action="store_true")
+    click_element_parser.set_defaults(func=command_click_element)
+
+    invoke_element_parser = subparsers.add_parser("invoke-element", help="Invoke a UI Automation element")
+    add_uia_selector_args(invoke_element_parser)
+    invoke_element_parser.add_argument("--no-activate", action="store_true")
+    invoke_element_parser.set_defaults(func=command_invoke_element)
+
+    set_element_parser = subparsers.add_parser("set-element-value", help="Set a UI Automation element value")
+    add_uia_selector_args(set_element_parser)
+    set_element_parser.add_argument("--value", default="")
+    set_element_parser.add_argument("--value-file")
+    set_element_parser.add_argument("--fallback-text-method", choices=["clipboard", "unicode"], default="clipboard")
+    set_element_parser.add_argument("--no-activate", action="store_true")
+    set_element_parser.set_defaults(func=command_set_element_value)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)

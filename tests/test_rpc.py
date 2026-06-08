@@ -14,3 +14,11 @@ def test_rpc_rejects_non_object_params():
     assert response is not None
     assert response["id"] == 2
     assert response["error"]["code"] == -32602
+
+
+def test_rpc_rejects_missing_uia_selector():
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 3, "method": "find_elements", "params": {"window_id": 1}})
+    assert response is not None
+    assert response["id"] == 3
+    assert response["error"]["code"] == -32000
+    assert response["error"]["data"]["desktop_code"] == "invalid_selector"
