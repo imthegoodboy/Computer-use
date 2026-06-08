@@ -1,0 +1,16 @@
+from desktop_control.rpc import handle_rpc_request
+
+
+def test_rpc_rejects_unknown_method():
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 1, "method": "missing", "params": {}})
+    assert response is not None
+    assert response["id"] == 1
+    assert response["error"]["code"] == -32000
+    assert response["error"]["data"]["desktop_code"] == "method_not_found"
+
+
+def test_rpc_rejects_non_object_params():
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 2, "method": "list_windows", "params": []})
+    assert response is not None
+    assert response["id"] == 2
+    assert response["error"]["code"] == -32602
