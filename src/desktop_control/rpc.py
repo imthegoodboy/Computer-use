@@ -142,7 +142,11 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         window = _window_for_action(hwnd, "state", activate=bool(params.get("activate", False)))
         result: dict[str, Any] = {"ok": True, "window": window.to_dict()}
         if params.get("screenshot"):
-            result["screenshot"] = capture_window(hwnd, str(params["screenshot"]))
+            result["screenshot"] = capture_window(
+                hwnd,
+                str(params["screenshot"]),
+                backend=params.get("screenshot_backend", "auto"),
+            )
         if params.get("include_ui", False):
             result["ui"] = get_uia_tree(
                 hwnd,
@@ -157,7 +161,11 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {
             "ok": True,
             "window": window.to_dict(),
-            "screenshot": capture_window(hwnd, str(_require(params, "out"))),
+            "screenshot": capture_window(
+                hwnd,
+                str(_require(params, "out")),
+                backend=params.get("backend", "auto"),
+            ),
         }
 
     if method == "click":

@@ -9,6 +9,7 @@ This project is an independent implementation. It does not decompile or depend o
 - List visible desktop windows.
 - Capture window state as JSON.
 - Capture a window screenshot.
+- Capture screenshots through selectable `auto`, `mss`, or `pil` backends with checksum and nonblank metadata.
 - Optionally include UI metadata from Windows UI Automation or child HWND fallback.
 - Activate a target window.
 - Move, click, drag, scroll, type text, and press key chords.
@@ -34,7 +35,7 @@ Find a safe window such as Notepad, then use its `hwnd`:
 
 ```powershell
 python -m desktop_control state --window-id 123456 --include-ui --pretty
-python -m desktop_control screenshot --window-id 123456 --out .tmp\notepad.png --pretty
+python -m desktop_control screenshot --window-id 123456 --out .tmp\notepad.png --backend auto --pretty
 python -m desktop_control click --window-id 123456 --x 120 --y 90 --expect-snapshot-id <snapshot_id> --pretty
 python -m desktop_control find-elements --window-id 123456 --name-contains "Save" --pretty
 python -m desktop_control wait-element --window-id 123456 --name "OK" --control-type button --timeout 5 --pretty
@@ -169,4 +170,10 @@ For batched actions:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_batch.ps1
+```
+
+For capture reliability:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_capture.ps1
 ```

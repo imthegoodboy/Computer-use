@@ -80,7 +80,7 @@ def command_state(args: argparse.Namespace) -> dict[str, Any]:
         "window": window.to_dict(),
     }
     if args.screenshot:
-        payload["screenshot"] = capture_window(args.window_id, args.screenshot)
+        payload["screenshot"] = capture_window(args.window_id, args.screenshot, backend=args.screenshot_backend)
     if args.include_ui:
         payload["ui"] = get_uia_tree(args.window_id, max_depth=args.max_depth, max_nodes=args.max_nodes)
     return payload
@@ -91,7 +91,7 @@ def command_screenshot(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "ok": True,
         "window": window.to_dict(),
-        "screenshot": capture_window(args.window_id, args.out),
+        "screenshot": capture_window(args.window_id, args.out, backend=args.backend),
     }
 
 
@@ -349,6 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser.add_argument("--max-depth", type=int, default=3)
     state_parser.add_argument("--max-nodes", type=int, default=200)
     state_parser.add_argument("--screenshot", help="Optional screenshot output path")
+    state_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
     state_parser.add_argument("--activate", action="store_true")
     state_parser.add_argument("--pretty", action="store_true")
     state_parser.set_defaults(func=command_state)
@@ -356,6 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot_parser = subparsers.add_parser("screenshot", help="Capture a window screenshot")
     screenshot_parser.add_argument("--window-id", type=int, required=True)
     screenshot_parser.add_argument("--out", required=True)
+    screenshot_parser.add_argument("--backend", choices=["auto", "pil", "mss"], default="auto")
     screenshot_parser.add_argument("--activate", action="store_true")
     screenshot_parser.add_argument("--pretty", action="store_true")
     screenshot_parser.set_defaults(func=command_screenshot)
