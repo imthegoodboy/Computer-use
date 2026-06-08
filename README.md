@@ -75,3 +75,9 @@ python tools\mouse_target.py --title "DesktopControlMouseTarget" --log .tmp\mous
 ```
 
 Then drive it with `move`, `click`, `drag`, and `scroll` using `--space client`; inspect `.tmp\mouse-events.jsonl` for recorded event coordinates.
+
+Or run the automated mouse smoke:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_mouse.ps1
+```

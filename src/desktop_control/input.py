@@ -14,11 +14,14 @@ INPUT_KEYBOARD = 1
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
+MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+MOUSEEVENTF_ABSOLUTE = 0x8000
 WHEEL_DELTA = 120
 
 KEYEVENTF_KEYUP = 0x0002
@@ -92,6 +95,8 @@ user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int)
 user32.SendInput.restype = wintypes.UINT
 user32.SetCursorPos.argtypes = (ctypes.c_int, ctypes.c_int)
 user32.SetCursorPos.restype = wintypes.BOOL
+user32.GetSystemMetrics.argtypes = (ctypes.c_int,)
+user32.GetSystemMetrics.restype = ctypes.c_int
 
 
 VK_CODES = {
@@ -136,6 +141,26 @@ def _mouse_input(flags: int, data: int = 0) -> INPUT:
     return item
 
 
+def _absolute_mouse_input(x: int, y: int, flags: int, data: int = 0) -> INPUT:
+    virtual_left = user32.GetSystemMetrics(76)
+    virtual_top = user32.GetSystemMetrics(77)
+    virtual_width = max(1, user32.GetSystemMetrics(78))
+    virtual_height = max(1, user32.GetSystemMetrics(79))
+    normalized_x = round(((int(x) - virtual_left) * 65535) / max(1, virtual_width - 1))
+    normalized_y = round(((int(y) - virtual_top) * 65535) / max(1, virtual_height - 1))
+    item = INPUT()
+    item.type = INPUT_MOUSE
+    item.mi = MOUSEINPUT(
+        int(normalized_x),
+        int(normalized_y),
+        int(data),
+        int(flags | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK),
+        0,
+        0,
+    )
+    return item
+
+
 def _key_input(vk: int, scan: int, flags: int) -> INPUT:
     item = INPUT()
     item.type = INPUT_KEYBOARD
@@ -154,8 +179,7 @@ def _send_inputs(inputs: list[INPUT]) -> None:
 
 
 def set_cursor_pos(x: int, y: int) -> None:
-    if not user32.SetCursorPos(int(x), int(y)):
-        _raise_last_error("cursor_move_failed", "Could not move the cursor")
+    _send_inputs([_absolute_mouse_input(x, y, MOUSEEVENTF_MOVE)])
 
 
 def move_to(x: int, y: int) -> None:
