@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .audit import record_audit_event
 from .capture import capture_window
 from .cli import _resolve_checked_point, _window_for_action
 from .errors import DesktopControlError
@@ -245,10 +246,17 @@ def handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
 
     try:
         result = _handle_method(method, params)
+        record_audit_event("rpc", method, params, result=result)
         if request_id is None:
             return None
         return _rpc_success(request_id, result)
     except DesktopControlError as exc:
+        record_audit_event(
+            "rpc",
+            method,
+            params,
+            error={"code": exc.code, "message": exc.message, "details": exc.details},
+        )
         return _rpc_error(
             request_id,
             -32000,

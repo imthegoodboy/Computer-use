@@ -15,6 +15,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Find, click, invoke, and set values on Windows UI Automation elements.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Keep a warm JSON-RPC stdio process for agent integrations.
+- Write structured JSONL audit logs when `DESKTOP_CONTROL_AUDIT_LOG` is set.
 
 ## Quick Start
 
@@ -55,6 +56,16 @@ Send one JSON-RPC request per line:
 ```
 
 Supported methods are `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, and `set_element_value`.
+
+## Audit Logs
+
+Set `DESKTOP_CONTROL_AUDIT_LOG` to capture JSONL receipts for CLI and RPC actions:
+
+```powershell
+$env:DESKTOP_CONTROL_AUDIT_LOG = ".tmp\desktop-control-audit.jsonl"
+```
+
+The audit log records action name, source, status, parameters, result summary, and structured errors. Sensitive text-like fields such as `text`, `value`, `password`, `secret`, and `token` are redacted with length metadata.
 
 ## Production Notes
 

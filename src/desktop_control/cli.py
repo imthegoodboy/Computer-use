@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .audit import record_audit_event
 from .capture import capture_window
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
@@ -28,6 +29,12 @@ def _json_dump(payload: dict[str, Any], pretty: bool) -> str:
 
 def _print(payload: dict[str, Any], pretty: bool) -> None:
     print(_json_dump(payload, pretty))
+
+
+def _audit_params(args: argparse.Namespace) -> dict[str, Any]:
+    params = vars(args).copy()
+    params.pop("func", None)
+    return params
 
 
 def _space(value: str) -> CoordinateSpace:
@@ -388,8 +395,10 @@ def main(argv: list[str] | None = None) -> int:
         payload = args.func(args)
         if isinstance(payload, int):
             return payload
+        record_audit_event("cli", getattr(args, "command", None), _audit_params(args), result=payload)
         _print(payload, pretty=bool(getattr(args, "pretty", False)))
         return 0
     except DesktopControlError as exc:
+        record_audit_event("cli", getattr(args, "command", None), _audit_params(args), error=exc.to_dict()["error"])
         print(_json_dump(exc.to_dict(), pretty=True), file=sys.stderr)
         return 2

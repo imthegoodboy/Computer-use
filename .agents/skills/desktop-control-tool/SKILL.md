@@ -51,6 +51,7 @@ Use these from the repository root:
 
 ```powershell
 $env:PYTHONPATH = "src"
+$env:DESKTOP_CONTROL_AUDIT_LOG = ".tmp\desktop-control-audit.jsonl"
 python -m desktop_control list-windows --pretty
 python -m desktop_control state --window-id <hwnd> --include-ui --pretty
 python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --pretty
