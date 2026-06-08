@@ -15,6 +15,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Find, click, invoke, and set values on Windows UI Automation elements.
 - Wait for matching windows or UI Automation elements without blind sleeps.
 - Reject stale action coordinates when an expected `snapshot_id` no longer matches current window state.
+- Batch multiple actions in one CLI/RPC call for lower overhead.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
 - Keep a warm JSON-RPC stdio process for agent integrations.
@@ -80,6 +81,27 @@ Send one JSON-RPC request per line:
 
 Supported methods are `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, and `wait_element`.
 
+## Batch Actions
+
+Batch related actions to avoid process startup or RPC round trips for every step:
+
+```json
+{
+  "actions": [
+    {"method": "move", "params": {"window_id": 123456, "space": "client", "x": 140, "y": 130}},
+    {"method": "click", "params": {"window_id": 123456, "space": "client", "x": 160, "y": 150}}
+  ]
+}
+```
+
+Run it:
+
+```powershell
+python -m desktop_control batch --file .tmp\batch-actions.json --pretty
+```
+
+The JSON-RPC method name is `batch` with the same payload shape. Nested batches are rejected.
+
 ## Audit Logs
 
 Set `DESKTOP_CONTROL_AUDIT_LOG` to capture JSONL receipts for CLI and RPC actions:
@@ -141,4 +163,10 @@ For stale-snapshot guards:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_snapshot.ps1
+```
+
+For batched actions:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_batch.ps1
 ```

@@ -43,12 +43,89 @@ def _require(params: dict[str, Any], key: str) -> Any:
     return params[key]
 
 
+def execute_batch_actions(actions: list[Any], stop_on_error: bool = True) -> dict[str, Any]:
+    if not isinstance(actions, list) or not actions:
+        raise DesktopControlError("invalid_request", "Batch actions must be a non-empty list")
+
+    results: list[dict[str, Any]] = []
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            error = {
+                "code": "invalid_request",
+                "message": "Batch action must be an object",
+                "details": {"index": index},
+            }
+            results.append({"ok": False, "index": index, "method": None, "error": error})
+            if stop_on_error:
+                raise DesktopControlError("batch_action_failed", "Batch action failed", {"failed_index": index, "results": results})
+            continue
+
+        method = action.get("method")
+        params = action.get("params", {})
+        if not isinstance(method, str):
+            error = {
+                "code": "invalid_request",
+                "message": "Batch action method must be a string",
+                "details": {"index": index},
+            }
+            results.append({"ok": False, "index": index, "method": method, "error": error})
+            if stop_on_error:
+                raise DesktopControlError("batch_action_failed", "Batch action failed", {"failed_index": index, "results": results})
+            continue
+        if method == "batch":
+            error = {
+                "code": "invalid_request",
+                "message": "Nested batch actions are not supported",
+                "details": {"index": index},
+            }
+            results.append({"ok": False, "index": index, "method": method, "error": error})
+            if stop_on_error:
+                raise DesktopControlError("batch_action_failed", "Batch action failed", {"failed_index": index, "results": results})
+            continue
+        if not isinstance(params, dict):
+            error = {
+                "code": "invalid_request",
+                "message": "Batch action params must be an object",
+                "details": {"index": index},
+            }
+            results.append({"ok": False, "index": index, "method": method, "error": error})
+            if stop_on_error:
+                raise DesktopControlError("batch_action_failed", "Batch action failed", {"failed_index": index, "results": results})
+            continue
+
+        try:
+            result = _handle_method(method, params)
+            results.append({"ok": True, "index": index, "method": method, "result": result})
+        except DesktopControlError as exc:
+            error = {"code": exc.code, "message": exc.message, "details": exc.details}
+            results.append({"ok": False, "index": index, "method": method, "error": error})
+            if stop_on_error:
+                raise DesktopControlError(
+                    "batch_action_failed",
+                    f"Batch action {index} failed",
+                    {"failed_index": index, "results": results},
+                ) from exc
+
+    return {
+        "ok": all(result["ok"] for result in results),
+        "action": "batch",
+        "count": len(results),
+        "results": results,
+    }
+
+
 def _enforce_expected_snapshot(window, params: dict[str, Any]) -> None:
     expected = params.get("expect_snapshot_id")
     assert_expected_snapshot(window.snapshot_id(), str(expected) if expected is not None else None)
 
 
 def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
+    if method == "batch":
+        return execute_batch_actions(
+            params.get("actions", []),
+            stop_on_error=bool(params.get("stop_on_error", True)),
+        )
+
     if method == "list_windows":
         windows = list_windows(
             include_hidden=bool(params.get("include_hidden", False)),
@@ -304,6 +381,15 @@ def handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
         )
 
 
+def handle_rpc_payload(payload: Any) -> dict[str, Any] | list[dict[str, Any]] | None:
+    if isinstance(payload, list):
+        if not payload:
+            return _rpc_error(None, -32600, "Invalid Request", {"reason": "batch cannot be empty"})
+        responses = [response for response in (handle_rpc_request(item) for item in payload) if response is not None]
+        return responses or None
+    return handle_rpc_request(payload)
+
+
 def serve_stdio() -> int:
     for line in sys.stdin:
         stripped = line.strip()
@@ -314,7 +400,7 @@ def serve_stdio() -> int:
         except json.JSONDecodeError as exc:
             response = _rpc_error(None, -32700, "Parse error", {"details": str(exc)})
         else:
-            response = handle_rpc_request(request)
+            response = handle_rpc_payload(request)
         if response is not None:
             print(json.dumps(response, separators=(",", ":")), flush=True)
     return 0

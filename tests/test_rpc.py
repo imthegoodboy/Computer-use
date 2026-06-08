@@ -1,4 +1,4 @@
-from desktop_control.rpc import handle_rpc_request
+from desktop_control.rpc import handle_rpc_payload, handle_rpc_request
 
 
 def test_rpc_rejects_unknown_method():
@@ -60,3 +60,47 @@ def test_rpc_rejects_stale_snapshot_before_keypress(monkeypatch):
     assert response is not None
     assert response["id"] == 5
     assert response["error"]["data"]["desktop_code"] == "stale_snapshot"
+
+
+def test_rpc_batch_runs_multiple_safe_actions():
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "batch",
+            "params": {
+                "actions": [
+                    {"method": "list_windows", "params": {"query": "unlikely-test-window"}},
+                    {"method": "list_windows", "params": {"query": "another-unlikely-test-window"}},
+                ]
+            },
+        }
+    )
+    assert response is not None
+    assert response["result"]["ok"] is True
+    assert response["result"]["count"] == 2
+
+
+def test_rpc_batch_rejects_nested_batch():
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "batch",
+            "params": {"actions": [{"method": "batch", "params": {"actions": []}}]},
+        }
+    )
+    assert response is not None
+    assert response["error"]["data"]["desktop_code"] == "batch_action_failed"
+    assert response["error"]["data"]["details"]["results"][0]["error"]["code"] == "invalid_request"
+
+
+def test_json_rpc_batch_payload_returns_multiple_responses():
+    response = handle_rpc_payload(
+        [
+            {"jsonrpc": "2.0", "id": 8, "method": "list_windows", "params": {"query": "a"}},
+            {"jsonrpc": "2.0", "id": 9, "method": "list_windows", "params": {"query": "b"}},
+        ]
+    )
+    assert isinstance(response, list)
+    assert [item["id"] for item in response] == [8, 9]

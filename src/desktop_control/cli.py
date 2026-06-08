@@ -306,6 +306,26 @@ def command_list_approvals(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def command_batch(args: argparse.Namespace) -> dict[str, Any]:
+    from .rpc import execute_batch_actions
+
+    if args.file:
+        payload = json.loads(Path(args.file).read_text(encoding="utf-8-sig"))
+    else:
+        payload = json.loads(sys.stdin.read())
+
+    if isinstance(payload, list):
+        actions = payload
+        stop_on_error = not args.continue_on_error
+    elif isinstance(payload, dict):
+        actions = payload.get("actions", [])
+        stop_on_error = bool(payload.get("stop_on_error", not args.continue_on_error))
+    else:
+        raise DesktopControlError("invalid_request", "Batch payload must be a list or object")
+
+    return execute_batch_actions(actions, stop_on_error=stop_on_error)
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -476,6 +496,12 @@ def build_parser() -> argparse.ArgumentParser:
     approvals_parser.add_argument("--approvals-file")
     approvals_parser.add_argument("--pretty", action="store_true")
     approvals_parser.set_defaults(func=command_list_approvals)
+
+    batch_parser = subparsers.add_parser("batch", help="Run multiple desktop-control actions from JSON")
+    batch_parser.add_argument("--file", help="JSON file containing an action list or {actions: [...]}")
+    batch_parser.add_argument("--continue-on-error", action="store_true")
+    batch_parser.add_argument("--pretty", action="store_true")
+    batch_parser.set_defaults(func=command_batch)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)
