@@ -98,10 +98,10 @@ def save_approvals(approvals: dict[str, list[Any]], explicit_path: str | None = 
 
 
 def approve_process_name(process_name: str, explicit_path: str | None = None) -> dict[str, Any]:
-    normalized = process_name.strip().lower()
+    normalized = _process_basename(process_name)
     if not normalized:
         raise DesktopControlError("invalid_approval", "Process name cannot be empty")
-    if normalized in BLOCKED_PROCESS_NAMES:
+    if _is_blocked_process_name(normalized):
         raise DesktopControlError(
             "policy_denied",
             "Refusing to approve a blocked process",
@@ -132,6 +132,48 @@ def approve_window(window: WindowInfo, explicit_path: str | None = None) -> dict
     approvals["windows"] = [json.loads(item) for item in sorted(existing)]
     path = save_approvals(approvals, explicit_path)
     return {"ok": True, "approval_file": str(path), "window": window.to_dict(), "approval": entry}
+
+
+def _process_basename(process_name_or_path: str) -> str:
+    normalized = process_name_or_path.strip().replace("/", "\\")
+    return normalized.rsplit("\\", 1)[-1].lower()
+
+
+def _is_blocked_process_name(process_name: str) -> bool:
+    candidates = {process_name}
+    if "." not in process_name:
+        candidates.add(f"{process_name}.exe")
+    return bool(candidates & BLOCKED_PROCESS_NAMES)
+
+
+def assert_not_blocked_process_name(process_name_or_path: str, action: str) -> None:
+    process_name = _process_basename(process_name_or_path)
+    if _is_blocked_process_name(process_name):
+        raise DesktopControlError(
+            "policy_denied",
+            f"Refusing blocked process for action {action}",
+            {"process_name": process_name_or_path},
+        )
+
+
+def assert_allowed_app_launch(
+    app: str,
+    *,
+    process_name: str | None = None,
+    executable_path: str | None = None,
+) -> None:
+    for candidate in (process_name, executable_path, app):
+        if candidate:
+            assert_not_blocked_process_name(candidate, "launch_app")
+
+    app_lc = app.lower()
+    matched_title = next((term for term in BLOCKED_TITLE_TERMS if term in app_lc), None)
+    if matched_title:
+        raise DesktopControlError(
+            "policy_denied",
+            "Refusing to launch app with sensitive display name",
+            {"matched_term": matched_title, "app": app},
+        )
 
 
 def is_approval_required() -> bool:

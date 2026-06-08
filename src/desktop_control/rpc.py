@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .apps import launch_app, list_apps
 from .audit import record_audit_event
 from .capture import capture_window
 from .cli import _resolve_checked_point, _window_for_action
@@ -136,6 +137,35 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "version": __version__,
             "windows": [window.to_dict() for window in windows],
         }
+
+    if method == "list_apps":
+        include_windows = bool(params.get("include_windows", True))
+        apps = list_apps(
+            query=params.get("query"),
+            include_windows=include_windows,
+            include_start_menu=bool(params.get("include_start_menu", True)),
+            include_running=bool(params.get("include_running", True)),
+            limit=int(params["limit"]) if params.get("limit") is not None else None,
+        )
+        return {
+            "ok": True,
+            "version": __version__,
+            "apps": [app.to_dict(include_windows=include_windows) for app in apps],
+        }
+
+    if method == "launch_app":
+        app_args = params.get("args", [])
+        if not isinstance(app_args, list):
+            raise DesktopControlError("invalid_request", "launch_app args must be a list")
+        return launch_app(
+            str(_require(params, "app")),
+            args=[str(item) for item in app_args],
+            cwd=str(params["cwd"]) if params.get("cwd") is not None else None,
+            wait=bool(params.get("wait", True)),
+            wait_query=str(params["wait_query"]) if params.get("wait_query") is not None else None,
+            timeout_seconds=float(params.get("timeout", 10.0)),
+            interval_seconds=float(params.get("interval", 0.1)),
+        )
 
     if method == "state":
         hwnd = int(_require(params, "window_id"))

@@ -457,6 +457,7 @@ Failure classes:
 Recovery policy:
 
 - Lightweight healthcheck: `list_windows` or `list_apps`.
+- If the target app is not running, use `launch_app`, then wait for an unambiguous target window before taking state.
 - If helper times out, restart broker once.
 - If window stale, rehydrate from latest app/window list.
 - Use the saved `window_ref` identity first, then refresh state and retry only when recovery returns one unambiguous target.

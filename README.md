@@ -7,6 +7,8 @@ This project is an independent implementation. It does not decompile or depend o
 ## Capabilities
 
 - List visible desktop windows.
+- List launchable Start Menu apps and running window-owning apps.
+- Launch apps by id, display name, process name, shortcut, or executable path.
 - Capture window state as JSON.
 - Capture a window screenshot.
 - Capture screenshots through selectable `auto`, `mss`, or `pil` backends with checksum and nonblank metadata.
@@ -30,6 +32,7 @@ Run commands from the repository root:
 ```powershell
 $env:PYTHONPATH = "src"
 python -m desktop_control list-windows --pretty
+python -m desktop_control list-apps --query notepad --pretty
 ```
 
 Find a safe window such as Notepad, then use its `hwnd`:
@@ -44,6 +47,7 @@ python -m desktop_control recover-window --ref-file .tmp\window-ref.json --prett
 python -m desktop_control click-element --window-id 123456 --name "OK" --control-type button --pretty
 python -m desktop_control type-text --window-id 123456 --text "hello from desktop-control" --pretty
 python -m desktop_control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
+python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
 ```
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
@@ -82,7 +86,18 @@ Send one JSON-RPC request per line:
 {"jsonrpc":"2.0","id":1,"method":"list_windows","params":{"query":"notepad"}}
 ```
 
-Supported methods are `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+Supported methods are `list_apps`, `launch_app`, `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+
+## App Discovery And Launch
+
+`list-apps` combines Start Menu shortcuts with running apps that own visible top-level windows. Each app includes an `app_ref`, launch path metadata, process ids, running state, and windows when requested.
+
+```powershell
+python -m desktop_control list-apps --query notepad --pretty
+python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
+```
+
+`launch-app` uses Windows shell execution and applies the same hard blocklist for terminal, security, credential, password-manager, and agent-host apps.
 
 ## Window Recovery
 
@@ -189,6 +204,12 @@ For capture reliability:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_capture.ps1
+```
+
+For app launch:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_launch.ps1
 ```
 
 For stale-window recovery:

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .apps import launch_app, list_apps
 from .audit import record_audit_event
 from .capture import capture_window
 from .errors import DesktopControlError
@@ -72,6 +73,33 @@ def command_list_windows(args: argparse.Namespace) -> dict[str, Any]:
         "version": __version__,
         "windows": [window.to_dict() for window in windows],
     }
+
+
+def command_list_apps(args: argparse.Namespace) -> dict[str, Any]:
+    apps = list_apps(
+        query=args.query,
+        include_windows=not args.no_windows,
+        include_start_menu=not args.no_start_menu,
+        include_running=not args.no_running,
+        limit=args.limit,
+    )
+    return {
+        "ok": True,
+        "version": __version__,
+        "apps": [app.to_dict(include_windows=not args.no_windows) for app in apps],
+    }
+
+
+def command_launch_app(args: argparse.Namespace) -> dict[str, Any]:
+    return launch_app(
+        args.app,
+        args=args.arg or [],
+        cwd=args.cwd,
+        wait=not args.no_wait,
+        wait_query=args.wait_query,
+        timeout_seconds=args.timeout,
+        interval_seconds=args.interval,
+    )
 
 
 def command_state(args: argparse.Namespace) -> dict[str, Any]:
@@ -393,6 +421,26 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--query", help="Filter by title or process name")
     list_parser.add_argument("--pretty", action="store_true")
     list_parser.set_defaults(func=command_list_windows)
+
+    apps_parser = subparsers.add_parser("list-apps", help="List launchable and running apps")
+    apps_parser.add_argument("--query", help="Filter by app id, display name, process name, or path")
+    apps_parser.add_argument("--no-windows", action="store_true", help="Do not include window payloads")
+    apps_parser.add_argument("--no-start-menu", action="store_true", help="Skip Start Menu shortcuts")
+    apps_parser.add_argument("--no-running", action="store_true", help="Skip running window-owning processes")
+    apps_parser.add_argument("--limit", type=int)
+    apps_parser.add_argument("--pretty", action="store_true")
+    apps_parser.set_defaults(func=command_list_apps)
+
+    launch_parser = subparsers.add_parser("launch-app", help="Launch an app by id, display name, process name, or path")
+    launch_parser.add_argument("--app", required=True)
+    launch_parser.add_argument("--arg", action="append", help="Argument passed to the launched app; repeat as needed")
+    launch_parser.add_argument("--cwd")
+    launch_parser.add_argument("--no-wait", action="store_true")
+    launch_parser.add_argument("--wait-query", help="Window query to wait for after launch")
+    launch_parser.add_argument("--timeout", type=float, default=10.0)
+    launch_parser.add_argument("--interval", type=float, default=0.1)
+    launch_parser.add_argument("--pretty", action="store_true")
+    launch_parser.set_defaults(func=command_launch_app)
 
     state_parser = subparsers.add_parser("state", help="Get window state")
     state_parser.add_argument("--window-id", type=int, required=True)

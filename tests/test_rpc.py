@@ -81,11 +81,81 @@ def test_rpc_batch_runs_multiple_safe_actions():
     assert response["result"]["count"] == 2
 
 
-def test_rpc_batch_rejects_nested_batch():
+def test_rpc_lists_apps(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.apps import AppInfo
+
+    monkeypatch.setattr(
+        rpc,
+        "list_apps",
+        lambda query=None, include_windows=True, include_start_menu=True, include_running=True, limit=None: [
+            AppInfo(id="app-1", display_name="App One", source="running", process_name="app.exe", running=True)
+        ],
+    )
+
     response = handle_rpc_request(
         {
             "jsonrpc": "2.0",
             "id": 7,
+            "method": "list_apps",
+            "params": {"query": "app", "include_windows": False},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["apps"][0]["id"] == "app-1"
+
+
+def test_rpc_launches_app(monkeypatch):
+    from desktop_control import rpc
+
+    captured = {}
+
+    def fake_launch_app(app, args=None, cwd=None, wait=True, wait_query=None, timeout_seconds=10.0, interval_seconds=0.1):
+        captured.update(
+            {
+                "app": app,
+                "args": args,
+                "cwd": cwd,
+                "wait": wait,
+                "wait_query": wait_query,
+                "timeout_seconds": timeout_seconds,
+                "interval_seconds": interval_seconds,
+            }
+        )
+        return {"ok": True, "action": "launch_app"}
+
+    monkeypatch.setattr(rpc, "launch_app", fake_launch_app)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "launch_app",
+            "params": {"app": "notepad.exe", "args": ["a.txt"], "wait": False},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["ok"] is True
+    assert captured["app"] == "notepad.exe"
+    assert captured["args"] == ["a.txt"]
+    assert captured["wait"] is False
+
+
+def test_rpc_launch_app_rejects_non_list_args():
+    response = handle_rpc_request(
+        {"jsonrpc": "2.0", "id": 9, "method": "launch_app", "params": {"app": "notepad.exe", "args": "bad"}}
+    )
+    assert response is not None
+    assert response["error"]["data"]["desktop_code"] == "invalid_request"
+
+
+def test_rpc_batch_rejects_nested_batch():
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
             "method": "batch",
             "params": {"actions": [{"method": "batch", "params": {"actions": []}}]},
         }
@@ -123,7 +193,7 @@ def test_rpc_recovers_window_ref(monkeypatch):
     response = handle_rpc_request(
         {
             "jsonrpc": "2.0",
-            "id": 8,
+            "id": 11,
             "method": "recover_window",
             "params": {
                 "window_ref": {"process_name": "target.exe", "title": "Recovered"},
@@ -142,7 +212,7 @@ def test_rpc_recovers_window_ref(monkeypatch):
 
 
 def test_rpc_recover_window_requires_identity():
-    response = handle_rpc_request({"jsonrpc": "2.0", "id": 9, "method": "recover_window", "params": {}})
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 12, "method": "recover_window", "params": {}})
     assert response is not None
     assert response["error"]["data"]["desktop_code"] == "invalid_window_ref"
 
@@ -150,9 +220,9 @@ def test_rpc_recover_window_requires_identity():
 def test_json_rpc_batch_payload_returns_multiple_responses():
     response = handle_rpc_payload(
         [
-            {"jsonrpc": "2.0", "id": 10, "method": "list_windows", "params": {"query": "a"}},
-            {"jsonrpc": "2.0", "id": 11, "method": "list_windows", "params": {"query": "b"}},
+            {"jsonrpc": "2.0", "id": 13, "method": "list_windows", "params": {"query": "a"}},
+            {"jsonrpc": "2.0", "id": 14, "method": "list_windows", "params": {"query": "b"}},
         ]
     )
     assert isinstance(response, list)
-    assert [item["id"] for item in response] == [10, 11]
+    assert [item["id"] for item in response] == [13, 14]

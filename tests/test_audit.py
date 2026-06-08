@@ -10,7 +10,7 @@ def test_audit_log_redacts_sensitive_fields(monkeypatch, tmp_path):
     record_audit_event(
         "test",
         "type_text",
-        {"text": "hello", "window_id": 123},
+        {"text": "hello", "window_id": 123, "args": ["--token", "abc"]},
         result={"ok": True, "value": "secret-value"},
     )
 
@@ -19,6 +19,7 @@ def test_audit_log_redacts_sensitive_fields(monkeypatch, tmp_path):
     assert event["action"] == "type_text"
     assert event["status"] == "success"
     assert event["params"]["text"] == {"redacted": True, "length": 5}
+    assert event["params"]["args"] == {"redacted": True, "length": 18}
     assert event["params"]["window_id"] == 123
     assert event["result"]["value"] == {"redacted": True, "length": 12}
 

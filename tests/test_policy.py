@@ -83,3 +83,9 @@ def test_blocked_process_cannot_be_approved(tmp_path):
     with pytest.raises(DesktopControlError) as exc_info:
         approve_process_name("pwsh.exe", explicit_path=str(tmp_path / "approvals.json"))
     assert exc_info.value.code == "policy_denied"
+
+
+def test_blocked_process_without_exe_suffix_cannot_be_approved(tmp_path):
+    with pytest.raises(DesktopControlError) as exc_info:
+        approve_process_name("pwsh", explicit_path=str(tmp_path / "approvals.json"))
+    assert exc_info.value.code == "policy_denied"
