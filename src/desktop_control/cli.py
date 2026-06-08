@@ -11,7 +11,7 @@ from .audit import record_audit_event
 from .capture import capture_window
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
-from .policy import assert_allowed_target
+from .policy import approve_process_name, approve_window, assert_allowed_target, load_approvals
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
 from .windows import (
@@ -275,6 +275,23 @@ def command_wait_element(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def command_approve_app(args: argparse.Namespace) -> dict[str, Any]:
+    return approve_process_name(args.process_name, explicit_path=args.approvals_file)
+
+
+def command_approve_window(args: argparse.Namespace) -> dict[str, Any]:
+    window = get_window(args.window_id)
+    return approve_window(window, explicit_path=args.approvals_file)
+
+
+def command_list_approvals(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "approval_file": args.approvals_file,
+        "approvals": load_approvals(args.approvals_file),
+    }
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -419,6 +436,23 @@ def build_parser() -> argparse.ArgumentParser:
     wait_element_parser.add_argument("--timeout", type=float, default=10.0)
     wait_element_parser.add_argument("--interval", type=float, default=0.1)
     wait_element_parser.set_defaults(func=command_wait_element)
+
+    approve_app_parser = subparsers.add_parser("approve-app", help="Approve a process name for controlled actions")
+    approve_app_parser.add_argument("--process-name", required=True)
+    approve_app_parser.add_argument("--approvals-file")
+    approve_app_parser.add_argument("--pretty", action="store_true")
+    approve_app_parser.set_defaults(func=command_approve_app)
+
+    approve_window_parser = subparsers.add_parser("approve-window", help="Approve the current process/title/class of a window")
+    approve_window_parser.add_argument("--window-id", type=int, required=True)
+    approve_window_parser.add_argument("--approvals-file")
+    approve_window_parser.add_argument("--pretty", action="store_true")
+    approve_window_parser.set_defaults(func=command_approve_window)
+
+    approvals_parser = subparsers.add_parser("list-approvals", help="List configured desktop-control approvals")
+    approvals_parser.add_argument("--approvals-file")
+    approvals_parser.add_argument("--pretty", action="store_true")
+    approvals_parser.set_defaults(func=command_list_approvals)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)

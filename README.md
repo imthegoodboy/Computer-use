@@ -15,6 +15,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Find, click, invoke, and set values on Windows UI Automation elements.
 - Wait for matching windows or UI Automation elements without blind sleeps.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
+- Optionally require explicit app/window approvals before control actions.
 - Keep a warm JSON-RPC stdio process for agent integrations.
 - Write structured JSONL audit logs when `DESKTOP_CONTROL_AUDIT_LOG` is set.
 
@@ -41,6 +42,25 @@ python -m desktop_control key --window-id 123456 --keys ctrl+a --keys backspace 
 ```
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
+
+## App Approvals
+
+Default mode blocks dangerous targets but allows ordinary safe windows. To require explicit approval before control actions:
+
+```powershell
+$env:DESKTOP_CONTROL_REQUIRE_APPROVALS = "1"
+$env:DESKTOP_CONTROL_APPROVALS_FILE = ".tmp\desktop-control-approvals.json"
+python -m desktop_control approve-app --process-name notepad.exe --pretty
+```
+
+You can also approve a specific discovered window:
+
+```powershell
+python -m desktop_control approve-window --window-id 123456 --pretty
+python -m desktop_control list-approvals --pretty
+```
+
+`DESKTOP_CONTROL_APPROVED_APPS` can hold a comma-separated process allowlist for short-lived sessions, for example `notepad.exe,calc.exe`. Blocked sensitive targets remain blocked even when listed.
 
 ## Agent JSON-RPC Mode
 
@@ -108,4 +128,10 @@ For wait predicates:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_wait.ps1
+```
+
+For approval enforcement:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_approvals.ps1
 ```
