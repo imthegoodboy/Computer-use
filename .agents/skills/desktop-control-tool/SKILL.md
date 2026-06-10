@@ -51,16 +51,32 @@ Use these from the repository root:
 
 ```powershell
 $env:PYTHONPATH = "src"
+$env:DESKTOP_CONTROL_REQUIRE_APPROVALS = "1"
+$env:DESKTOP_CONTROL_APPROVALS_FILE = ".tmp\desktop-control-approvals.json"
+$env:DESKTOP_CONTROL_AUDIT_LOG = ".tmp\desktop-control-audit.jsonl"
 python -m desktop_control list-windows --pretty
+python -m desktop_control list-apps --query notepad --pretty
+python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
+python -m desktop_control approve-app --process-name notepad.exe --pretty
 python -m desktop_control state --window-id <hwnd> --include-ui --pretty
-python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --pretty
-python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --pretty
+python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --backend auto --pretty
+python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --expect-snapshot-id <snapshot_id> --pretty
+python -m desktop_control find-elements --window-id <hwnd> --name-contains "Save" --pretty
+python -m desktop_control wait-window --query "Notepad" --timeout 5 --pretty
+python -m desktop_control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty
+python -m desktop_control recover-window --ref-file .tmp\window-ref.json --pretty
+python -m desktop_control click-element --window-id <hwnd> --name "OK" --control-type button --pretty
+python -m desktop_control set-element-value --window-id <hwnd> --control-type edit --value "text" --pretty
+python -m desktop_control invoke-element --window-id <hwnd> --name "Apply" --control-type button --pretty
 python -m desktop_control type-text --window-id <hwnd> --text "text to type" --pretty
 python -m desktop_control key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
+python -m desktop_control batch --file .tmp\batch-actions.json --pretty
 python -m desktop_control serve-stdio
 ```
 
-The stdio server accepts JSON-RPC methods `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, and `key`.
+Each returned window includes `window_ref`. If an action reports a stale or missing window, recover explicitly with `recover-window` or JSON-RPC `recover_window`, refresh state, then retry only when the recovered target is unambiguous.
+
+The stdio server accepts JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
 
 ## Performance Rules
 

@@ -1,0 +1,19 @@
+[project]
+name = "desktop-control-tool"
+version = "0.1.0"
+description = "Windows desktop-control MVP for agent computer-use workflows"
+requires-python = ">=3.10"
+dependencies = [
+  "comtypes>=1.2; platform_system == 'Windows'",
+  "Pillow>=10",
+  "psutil>=5.9",
+  "pywin32>=306; platform_system == 'Windows'",
+]
+
+[project.scripts]
+desktop-control = "desktop_control.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
