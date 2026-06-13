@@ -14,6 +14,10 @@ from .errors import DesktopControlError, wrap_os_error
 from .models import Rect, WindowInfo
 
 CoordinateSpace = Literal["window", "client", "screen"]
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_DPI_UNAWARE = 0
+MONITOR_DEFAULTTONEAREST = 2
+MDT_EFFECTIVE_DPI = 0
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -25,7 +29,103 @@ user32.SetForegroundWindow.argtypes = (ctypes.c_void_p,)
 user32.SetForegroundWindow.restype = ctypes.c_bool
 user32.SetFocus.argtypes = (ctypes.c_void_p,)
 user32.SetFocus.restype = ctypes.c_void_p
+user32.MonitorFromWindow.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+user32.MonitorFromWindow.restype = ctypes.c_void_p
 kernel32.GetCurrentThreadId.restype = ctypes.c_uint
+kernel32.OpenProcess.argtypes = (ctypes.c_uint, ctypes.c_bool, ctypes.c_uint)
+kernel32.OpenProcess.restype = ctypes.c_void_p
+kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+kernel32.CloseHandle.restype = ctypes.c_bool
+
+
+def _enable_process_dpi_awareness() -> None:
+    try:
+        set_context = user32.SetProcessDpiAwarenessContext
+        set_context.argtypes = (ctypes.c_void_p,)
+        set_context.restype = ctypes.c_bool
+        if set_context(ctypes.c_void_p(-4)):
+            return
+    except Exception:
+        pass
+
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        set_awareness = shcore.SetProcessDpiAwareness
+        set_awareness.argtypes = (ctypes.c_int,)
+        set_awareness.restype = ctypes.c_long
+        set_awareness(2)
+        return
+    except Exception:
+        pass
+
+    try:
+        set_dpi_aware = user32.SetProcessDPIAware
+        set_dpi_aware.argtypes = ()
+        set_dpi_aware.restype = ctypes.c_bool
+        set_dpi_aware()
+    except Exception:
+        pass
+
+
+_enable_process_dpi_awareness()
+
+
+def _dpi_for_window(hwnd: int) -> int:
+    try:
+        get_dpi = user32.GetDpiForWindow
+        get_dpi.argtypes = (ctypes.c_void_p,)
+        get_dpi.restype = ctypes.c_uint
+        dpi = int(get_dpi(ctypes.c_void_p(int(hwnd))))
+        return dpi if dpi > 0 else 96
+    except Exception:
+        return 96
+
+
+def _monitor_dpi_for_window(hwnd: int) -> int:
+    try:
+        monitor = user32.MonitorFromWindow(ctypes.c_void_p(int(hwnd)), MONITOR_DEFAULTTONEAREST)
+        if monitor:
+            shcore = ctypes.WinDLL("shcore", use_last_error=True)
+            get_dpi = shcore.GetDpiForMonitor
+            get_dpi.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint))
+            get_dpi.restype = ctypes.c_long
+            dpi_x = ctypes.c_uint()
+            dpi_y = ctypes.c_uint()
+            if get_dpi(ctypes.c_void_p(monitor), MDT_EFFECTIVE_DPI, ctypes.byref(dpi_x), ctypes.byref(dpi_y)) == 0:
+                dpi = int(dpi_x.value)
+                return dpi if dpi > 0 else 96
+    except Exception:
+        pass
+    return _dpi_for_window(hwnd)
+
+
+def _process_dpi_awareness(pid: int) -> int | None:
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return None
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        get_awareness = shcore.GetProcessDpiAwareness
+        get_awareness.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_int))
+        get_awareness.restype = ctypes.c_long
+        awareness = ctypes.c_int()
+        if get_awareness(ctypes.c_void_p(handle), ctypes.byref(awareness)) == 0:
+            return int(awareness.value)
+    except Exception:
+        return None
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return None
+
+
+def _client_input_scale(hwnd: int) -> float:
+    try:
+        _thread_id, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if _process_dpi_awareness(int(pid)) == PROCESS_DPI_UNAWARE:
+            return max(1.0, _monitor_dpi_for_window(hwnd) / 96.0)
+    except Exception:
+        return 1.0
+    return 1.0
 
 
 def _process_name(pid: int) -> str:
@@ -294,7 +394,8 @@ def resolve_point(hwnd: int, x: int, y: int, space: CoordinateSpace = "window") 
     if space == "screen":
         return int(x), int(y)
     if space == "client":
-        sx, sy = win32gui.ClientToScreen(hwnd, (int(x), int(y)))
+        scale = _client_input_scale(hwnd)
+        sx, sy = win32gui.ClientToScreen(hwnd, (round(int(x) * scale), round(int(y) * scale)))
         return int(sx), int(sy)
     if space == "window":
         info = get_window(hwnd)

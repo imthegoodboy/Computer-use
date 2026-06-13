@@ -517,6 +517,49 @@ def command_agent_step(args: argparse.Namespace) -> dict[str, Any]:
     return execute_agent_step(params)
 
 
+def command_agent_run(args: argparse.Namespace) -> dict[str, Any]:
+    from .rpc import execute_agent_run
+
+    payload: Any = {}
+    if args.file:
+        payload = _load_json_payload(args.file)
+    if isinstance(payload, list):
+        params: dict[str, Any] = {"actions": payload}
+    elif isinstance(payload, dict):
+        params = dict(payload)
+    else:
+        raise DesktopControlError("invalid_request", "agent-run payload must be a JSON object or array")
+
+    if args.window_id is not None:
+        params.setdefault("window_id", args.window_id)
+    if args.query:
+        params.setdefault("query", args.query)
+    if args.ref_file:
+        ref_payload = json.loads(Path(args.ref_file).read_text(encoding="utf-8-sig"))
+        params.setdefault("window_ref", _extract_window_ref_payload(ref_payload))
+    if args.space:
+        params.setdefault("space", args.space)
+    if args.out:
+        params.setdefault("out", args.out)
+    if args.no_screenshot:
+        params.setdefault("include_screenshot", False)
+    if args.include_text or args.include_ui:
+        params.setdefault("include_text", True)
+    if args.include_text_after:
+        params["include_text_after"] = True
+    if args.continue_on_error:
+        params["continue_on_error"] = True
+    if args.no_observe_after:
+        params["observe_after"] = False
+    if args.screenshot_backend:
+        params.setdefault("screenshot_backend", args.screenshot_backend)
+    if args.activate:
+        params.setdefault("activate", True)
+    if args.allow_ambiguous:
+        params.setdefault("allow_ambiguous", True)
+    return execute_agent_run(params)
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -833,6 +876,29 @@ def build_parser() -> argparse.ArgumentParser:
     agent_step_parser.add_argument("--include-text-after", action="store_true")
     agent_step_parser.add_argument("--pretty", action="store_true")
     agent_step_parser.set_defaults(func=command_agent_step)
+
+    agent_run_parser = subparsers.add_parser(
+        "agent-run",
+        aliases=["run"],
+        help="Observe, run optional agent actions, and return the next visual state",
+    )
+    agent_run_parser.add_argument("--file", help="JSON object/array containing observe and action fields")
+    agent_run_parser.add_argument("--window-id", "--id", dest="window_id", type=int)
+    agent_run_parser.add_argument("--query", help="Resolve the target window by title or process name")
+    agent_run_parser.add_argument("--ref-file", help="JSON file containing a window_ref, window, or full observe result")
+    agent_run_parser.add_argument("--space", choices=["window", "client", "screen"])
+    agent_run_parser.add_argument("--out", help="Initial screenshot output path; defaults under DESKTOP_CONTROL_CAPTURE_DIR")
+    agent_run_parser.add_argument("--no-screenshot", action="store_true")
+    agent_run_parser.add_argument("--include-text", action="store_true")
+    agent_run_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    agent_run_parser.add_argument("--include-text-after", action="store_true")
+    agent_run_parser.add_argument("--continue-on-error", action="store_true")
+    agent_run_parser.add_argument("--no-observe-after", action="store_true")
+    agent_run_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
+    agent_run_parser.add_argument("--activate", action="store_true")
+    agent_run_parser.add_argument("--allow-ambiguous", action="store_true")
+    agent_run_parser.add_argument("--pretty", action="store_true")
+    agent_run_parser.set_defaults(func=command_agent_run)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)

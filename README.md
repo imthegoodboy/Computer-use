@@ -21,6 +21,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Reject stale action coordinates when an expected `snapshot_id` no longer matches current window state.
 - Return a reusable `window_ref` and recover a current window when the original handle is stale.
 - Batch multiple actions in one CLI/RPC call for lower overhead.
+- Run an agent observe/action/observe loop in one CLI/RPC call with trace timings.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
 - Install as an npm CLI package with `desktop-control` and `desktop-control-tool` binaries.
@@ -56,6 +57,7 @@ python -m desktop_control click-element --window-id 123456 --name "OK" --control
 python -m desktop_control type-text --window-id 123456 --text "hello from desktop-control" --pretty
 python -m desktop_control press-key --window-id 123456 --keys ctrl+a --keys backspace --pretty
 python -m desktop_control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
+python -m desktop_control agent-run --query notepad --pretty
 python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
 ```
 
@@ -82,7 +84,25 @@ desktop-control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
 desktop-control observe --window-id 123456 --pretty
 ```
 
-Agents can also execute OpenAI/Codex-style computer-use action JSON directly with `agent-step`:
+For the default agent loop, use `agent-run`. It observes the target window first, injects the observed window context into the actions, runs the actions immediately, then observes again so the caller gets the next visual state and trace timings in one payload:
+
+```json
+{
+  "query": "notepad",
+  "space": "client",
+  "actions": [
+    {"type": "click", "x": 120, "y": 90, "button": "left"},
+    {"type": "type", "text": "hello"},
+    {"type": "keypress", "keys": ["enter"]}
+  ]
+}
+```
+
+```powershell
+desktop-control agent-run --file .tmp\agent-run.json --pretty
+```
+
+Pass `observe_after: false` or `--no-observe-after` only when the caller intentionally wants to skip verification. Set `strict_snapshot: true` when the caller wants geometry-level stale-coordinate rejection inside `agent-run`. Use `agent-step` when the caller already has a fresh observation and wants only to execute actions:
 
 ```json
 {
@@ -101,7 +121,7 @@ Agents can also execute OpenAI/Codex-style computer-use action JSON directly wit
 desktop-control agent-step --file .tmp\agent-step.json --pretty
 ```
 
-Supported agent action types match the common computer-use loop shape: `click`, `double_click`, `scroll`, `type`, `wait`, `keypress`, `drag`, `move`, and `screenshot`. The command injects the observed window and snapshot guard into each action unless an action overrides them.
+Supported agent action types match the common computer-use loop shape: `click`, `double_click`, `scroll`, `type`, `wait`, `keypress`, `drag`, `move`, and `screenshot`. `agent-run` injects the observed window context and verifies with a fresh observation; `agent-step` injects the observed window and snapshot guard into each action unless an action overrides them.
 
 ## NPM CLI Package
 
@@ -192,7 +212,7 @@ Send one JSON-RPC request per line:
 {"jsonrpc":"2.0","id":1,"method":"observe","params":{"query":"notepad","include_text":true}}
 ```
 
-Supported methods are `list_apps`, `launch_app`, `list_windows`, `observe`, `view`, `agent_step`, `act`, `perform_actions`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+Supported methods are `list_apps`, `launch_app`, `list_windows`, `observe`, `view`, `agent_run`, `run`, `agent_step`, `act`, `perform_actions`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
 
 ## Named-Pipe JSON-RPC
 
@@ -331,6 +351,12 @@ For agent action-step execution:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_agent_step.ps1
+```
+
+For the full agent observe/action/observe loop:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_agent_run.ps1
 ```
 
 For app launch:

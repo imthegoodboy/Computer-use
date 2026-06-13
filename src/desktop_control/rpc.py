@@ -129,7 +129,12 @@ def build_window_state(params: dict[str, Any], *, default_screenshot: bool = Tru
             "Window state must include at least one of screenshot or UI text",
         )
 
-    window = _window_for_action(hwnd, "get_window_state", activate=bool(params.get("activate", False)))
+    activate = bool(params.get("activate", False))
+    window = _window_for_action(hwnd, "get_window_state", activate=activate)
+    settle_ms = int(params.get("settle_ms", 0) or 0)
+    if activate and settle_ms > 0:
+        time.sleep(min(settle_ms, 2000) / 1000.0)
+        window = _window_for_action(hwnd, "get_window_state", activate=False)
     result: dict[str, Any] = {
         "ok": True,
         "action": "get_window_state",
@@ -350,6 +355,10 @@ def _agent_step_actions(params: dict[str, Any]) -> list[Any]:
     raise DesktopControlError("invalid_request", "agent_step requires actions, action, type, or method")
 
 
+def _has_agent_actions(params: dict[str, Any]) -> bool:
+    return "actions" in params or "action" in params or any(key in params for key in ("type", "method"))
+
+
 def _agent_window_context(params: dict[str, Any]) -> dict[str, Any]:
     context: dict[str, Any] = {}
     raw_window = params.get("window")
@@ -502,6 +511,152 @@ def execute_agent_step(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _elapsed_ms(start: float) -> int:
+    return max(0, round((time.perf_counter() - start) * 1000))
+
+
+def _agent_run_observe_params(params: dict[str, Any]) -> dict[str, Any] | None:
+    raw_observe = params.get("observe", params.get("observation", True))
+    if raw_observe is False:
+        return None
+
+    observe_params = dict(raw_observe) if isinstance(raw_observe, dict) else {}
+    for key in (
+        "window",
+        "window_ref",
+        "window_id",
+        "hwnd",
+        "id",
+        "query",
+        "process_id",
+        "process_name",
+        "title",
+        "title_contains",
+        "class_name",
+        "include_hidden",
+        "allow_ambiguous",
+        "include_screenshot",
+        "screenshot",
+        "include_text",
+        "include_ui",
+        "max_depth",
+        "max_nodes",
+        "screenshot_backend",
+        "backend",
+        "out",
+        "activate",
+        "settle_ms",
+    ):
+        if key in params and key not in observe_params:
+            observe_params[key] = params[key]
+    return observe_params
+
+
+def _agent_context_from_observation(observation: dict[str, Any] | None) -> dict[str, Any]:
+    if not observation:
+        return {}
+    window = observation.get("window")
+    if not isinstance(window, dict):
+        return {}
+    context = {"window": window}
+    snapshot_id = window.get("snapshot_id") or observation.get("generation")
+    if snapshot_id not in (None, ""):
+        context["expect_snapshot_id"] = str(snapshot_id)
+    return context
+
+
+def _merge_agent_context(params: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(params)
+    if "window" in context and "window" not in merged and "window_id" not in merged:
+        merged["window"] = context["window"]
+    if "expect_snapshot_id" in context and "expect_snapshot_id" not in merged and "snapshot_id" not in merged:
+        merged["expect_snapshot_id"] = context["expect_snapshot_id"]
+    return merged
+
+
+def _agent_run_observe_after_params(
+    params: dict[str, Any],
+    observation: dict[str, Any] | None,
+    has_actions: bool,
+) -> dict[str, Any] | None:
+    raw_observe = params.get("observe_after", params.get("verify", has_actions))
+    if not raw_observe:
+        return None
+
+    observe_params = dict(raw_observe) if isinstance(raw_observe, dict) else {}
+    window = observation.get("window") if isinstance(observation, dict) else None
+    if isinstance(window, dict) and "window" not in observe_params and "window_id" not in observe_params:
+        observe_params["window"] = window
+    if params.get("include_text_after") is not None:
+        observe_params["include_text"] = bool(params["include_text_after"])
+    return observe_params
+
+
+def execute_agent_run(params: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(params, dict):
+        raise DesktopControlError("invalid_request", "agent_run params must be an object")
+
+    trace: list[dict[str, Any]] = []
+    run_start = time.perf_counter()
+    observation: dict[str, Any] | None = None
+
+    has_actions = _has_agent_actions(params)
+    observe_params = _agent_run_observe_params(params)
+    if has_actions and observe_params is not None and "activate" not in observe_params:
+        observe_params["activate"] = True
+    if has_actions and observe_params is not None and "settle_ms" not in observe_params:
+        observe_params["settle_ms"] = 150
+    if observe_params is not None:
+        started = time.perf_counter()
+        observation = observe_window(observe_params)
+        trace.append(
+            {
+                "phase": "observe",
+                "elapsed_ms": _elapsed_ms(started),
+                "snapshot_id": observation.get("generation"),
+            }
+        )
+
+    step: dict[str, Any] | None = None
+    if has_actions:
+        started = time.perf_counter()
+        step_params = _merge_agent_context(params, _agent_context_from_observation(observation))
+        step_params.setdefault("strict_snapshot", False)
+        step_params["observe_after"] = False
+        step = execute_agent_step(step_params)
+        trace.append({"phase": "act", "elapsed_ms": _elapsed_ms(started), "count": step.get("count", 0)})
+
+    next_observation: dict[str, Any] | None = None
+    observe_after_params = _agent_run_observe_after_params(params, observation, has_actions)
+    if observe_after_params is not None:
+        started = time.perf_counter()
+        next_observation = observe_window(observe_after_params)
+        trace.append(
+            {
+                "phase": "observe_after",
+                "elapsed_ms": _elapsed_ms(started),
+                "snapshot_id": next_observation.get("generation"),
+            }
+        )
+
+    current_observation = next_observation or observation
+    result: dict[str, Any] = {
+        "ok": bool(step["ok"]) if step is not None else True,
+        "action": "agent_run",
+        "elapsed_ms": _elapsed_ms(run_start),
+        "trace": trace,
+    }
+    if observation is not None:
+        result["observation"] = observation
+    if step is not None:
+        result["step"] = step
+    if next_observation is not None:
+        result["next_observation"] = next_observation
+    if current_observation is not None:
+        result["current_observation"] = current_observation
+    return result
+
+
 def _enforce_expected_snapshot(window, params: dict[str, Any]) -> None:
     expected = params.get("expect_snapshot_id")
     assert_expected_snapshot(window.snapshot_id(), str(expected) if expected is not None else None)
@@ -518,6 +673,9 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
     if method in {"agent_step", "act", "perform_actions"}:
         return execute_agent_step(params)
+
+    if method in {"agent_run", "run"}:
+        return execute_agent_run(params)
 
     if method == "get_window":
         hwnd = _window_id_from_params(params)
