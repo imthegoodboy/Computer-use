@@ -1,4 +1,4 @@
-from desktop_control.rpc import handle_rpc_payload, handle_rpc_request
+from desktop_control.rpc import execute_agent_step, handle_rpc_payload, handle_rpc_request, normalize_agent_action
 
 
 def test_rpc_rejects_unknown_method():
@@ -454,3 +454,96 @@ def test_rpc_supports_codex_style_action_aliases(monkeypatch):
     assert response is not None
     assert response["result"]["action"] == "key"
     assert pressed["keys"] == ["Return"]
+
+
+def test_normalize_agent_action_injects_window_and_snapshot_context():
+    action = normalize_agent_action(
+        {"type": "click", "x": 10, "y": 20, "button": "left"},
+        {"window": {"id": 70, "snapshot_id": "snap-70"}, "expect_snapshot_id": "snap-70", "space": "client"},
+    )
+
+    assert action == {
+        "method": "click",
+        "params": {
+            "x": 10,
+            "y": 20,
+            "button": "left",
+            "window": {"id": 70, "snapshot_id": "snap-70"},
+            "space": "client",
+            "expect_snapshot_id": "snap-70",
+        },
+    }
+
+
+def test_normalize_agent_action_converts_drag_path():
+    action = normalize_agent_action(
+        {"type": "drag", "path": [{"x": 1, "y": 2}, {"x": 9, "y": 10}]},
+        {"window": {"id": 71}},
+    )
+
+    assert action["method"] == "drag"
+    assert action["params"]["from_x"] == 1
+    assert action["params"]["from_y"] == 2
+    assert action["params"]["to_x"] == 9
+    assert action["params"]["to_y"] == 10
+    assert action["params"]["window"] == {"id": 71}
+
+
+def test_execute_agent_step_accepts_openai_style_actions(monkeypatch):
+    from desktop_control import rpc
+
+    calls = []
+
+    def fake_handle(method, params):
+        calls.append((method, params))
+        return {"ok": True, "action": method}
+
+    monkeypatch.setattr(rpc, "_handle_method", fake_handle)
+
+    result = execute_agent_step(
+        {
+            "window": {"id": 72, "snapshot_id": "snap-72"},
+            "actions": [
+                {"type": "click", "x": 10, "y": 20},
+                {"type": "type", "text": "hello"},
+                {"type": "keypress", "keys": ["enter"]},
+            ],
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["action"] == "agent_step"
+    assert result["count"] == 3
+    assert [method for method, _params in calls] == ["click", "type_text", "keypress"]
+    assert calls[0][1]["window"] == {"id": 72, "snapshot_id": "snap-72"}
+    assert calls[0][1]["expect_snapshot_id"] == "snap-72"
+    assert calls[1][1]["text"] == "hello"
+    assert calls[2][1]["keys"] == ["enter"]
+
+
+def test_rpc_agent_step_alias_runs_actions(monkeypatch):
+    from desktop_control import rpc
+
+    captured = {}
+
+    def fake_agent_step(params):
+        captured["params"] = params
+        return {"ok": True, "action": "agent_step", "count": 1}
+
+    monkeypatch.setattr(rpc, "execute_agent_step", fake_agent_step)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 21,
+            "method": "act",
+            "params": {
+                "window": {"id": 73, "snapshot_id": "snap-73"},
+                "action": {"type": "move", "x": 11, "y": 12},
+            },
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["action"] == "agent_step"
+    assert captured["params"]["action"] == {"type": "move", "x": 11, "y": 12}

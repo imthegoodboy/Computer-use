@@ -333,6 +333,175 @@ def execute_batch_actions(actions: list[Any], stop_on_error: bool = True) -> dic
     }
 
 
+def _agent_step_actions(params: dict[str, Any]) -> list[Any]:
+    if "actions" in params:
+        actions = params["actions"]
+        if isinstance(actions, dict):
+            return [actions]
+        if isinstance(actions, list):
+            return actions
+        raise DesktopControlError("invalid_request", "agent_step actions must be a list or object")
+
+    action = params.get("action")
+    if isinstance(action, dict):
+        return [action]
+    if any(key in params for key in ("type", "method")):
+        return [params]
+    raise DesktopControlError("invalid_request", "agent_step requires actions, action, type, or method")
+
+
+def _agent_window_context(params: dict[str, Any]) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    raw_window = params.get("window")
+    if isinstance(raw_window, dict):
+        context["window"] = dict(raw_window)
+
+    for key in ("window_id", "hwnd", "id"):
+        value = params.get(key)
+        if value not in (None, ""):
+            context["window"] = {"id": int(value), "hwnd": int(value)}
+            break
+
+    if "window" not in context and any(
+        params.get(key) not in (None, "")
+        for key in ("window_ref", "query", "process_id", "process_name", "title", "title_contains", "class_name")
+    ):
+        window, _selection = _select_observe_window(params)
+        context["window"] = window.to_dict()
+
+    raw_context_window = context.get("window")
+    snapshot_id = params.get("expect_snapshot_id", params.get("snapshot_id"))
+    if snapshot_id is None and isinstance(raw_context_window, dict):
+        snapshot_id = raw_context_window.get("snapshot_id")
+    if snapshot_id not in (None, ""):
+        context["expect_snapshot_id"] = str(snapshot_id)
+
+    if params.get("space"):
+        context["space"] = str(params["space"])
+    if params.get("activate") is not None:
+        context["activate"] = bool(params["activate"])
+    return context
+
+
+def _point_from_agent_value(value: Any, label: str) -> tuple[int, int]:
+    if isinstance(value, dict):
+        if "x" not in value or "y" not in value:
+            raise DesktopControlError("invalid_request", f"{label} point must include x and y")
+        return int(value["x"]), int(value["y"])
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        return int(value[0]), int(value[1])
+    raise DesktopControlError("invalid_request", f"{label} point must be an object or [x, y] array")
+
+
+def _flatten_agent_action(action: dict[str, Any]) -> dict[str, Any]:
+    nested = action.get("action")
+    if isinstance(nested, dict) and "method" not in action and "type" not in action:
+        flattened = dict(nested)
+        for key in (
+            "window",
+            "window_id",
+            "hwnd",
+            "id",
+            "expect_snapshot_id",
+            "snapshot_id",
+            "space",
+            "activate",
+        ):
+            if key in action:
+                flattened.setdefault(key, action[key])
+        return flattened
+    return dict(action)
+
+
+def normalize_agent_action(action: Any, context: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(action, dict):
+        raise DesktopControlError("invalid_request", "Agent action must be an object")
+
+    source = _flatten_agent_action(action)
+    raw_method = source.get("method", source.get("type", source.get("action")))
+    if not isinstance(raw_method, str) or not raw_method.strip():
+        raise DesktopControlError("invalid_request", "Agent action must include method, type, or action")
+    method = raw_method.strip()
+
+    params = {
+        key: value
+        for key, value in source.items()
+        if key not in {"method", "type", "action"}
+    }
+
+    if method == "type":
+        method = "type_text"
+    elif method == "screenshot":
+        method = "observe"
+        params.setdefault("include_screenshot", True)
+
+    if "mouse_button" in params and "button" not in params:
+        params["button"] = params["mouse_button"]
+    if "click_count" in params and "count" not in params:
+        params["count"] = params["click_count"]
+    if "screenshotId" in params and "screenshot_id" not in params:
+        params["screenshot_id"] = params["screenshotId"]
+
+    if method == "drag" and "path" in params:
+        path = params.pop("path")
+        if not isinstance(path, list) or len(path) < 2:
+            raise DesktopControlError("invalid_request", "drag path must contain at least two points")
+        from_x, from_y = _point_from_agent_value(path[0], "drag start")
+        to_x, to_y = _point_from_agent_value(path[-1], "drag end")
+        params.setdefault("from_x", from_x)
+        params.setdefault("from_y", from_y)
+        params.setdefault("to_x", to_x)
+        params.setdefault("to_y", to_y)
+
+    if "window" not in params and "window_id" not in params and "window" in context:
+        params["window"] = context["window"]
+    if "space" not in params and "space" in context:
+        params["space"] = context["space"]
+    if "activate" not in params and "activate" in context:
+        params["activate"] = context["activate"]
+
+    strict_snapshot = bool(context.get("strict_snapshot", True))
+    if strict_snapshot and "expect_snapshot_id" not in params and "expect_snapshot_id" in context:
+        if method in {"click", "double_click", "move", "scroll", "drag", "type_text", "key", "keypress", "press_key"}:
+            params["expect_snapshot_id"] = context["expect_snapshot_id"]
+
+    return {"method": method, "params": params}
+
+
+def _agent_step_observe_after(params: dict[str, Any], context: dict[str, Any]) -> dict[str, Any] | None:
+    raw_observe = params.get("observe_after", params.get("verify", False))
+    if not raw_observe:
+        return None
+    observe_params = dict(raw_observe) if isinstance(raw_observe, dict) else {}
+    if "window" not in observe_params and "window_id" not in observe_params and "window" in context:
+        observe_params["window"] = context["window"]
+    if params.get("include_text_after") is not None:
+        observe_params["include_text"] = bool(params["include_text_after"])
+    return observe_window(observe_params)
+
+
+def execute_agent_step(params: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(params, dict):
+        raise DesktopControlError("invalid_request", "agent_step params must be an object")
+
+    context = _agent_window_context(params)
+    context["strict_snapshot"] = bool(params.get("strict_snapshot", True))
+    actions = [normalize_agent_action(action, context) for action in _agent_step_actions(params)]
+    stop_on_error = bool(params.get("stop_on_error", not bool(params.get("continue_on_error", False))))
+    batch = execute_batch_actions(actions, stop_on_error=stop_on_error)
+    result: dict[str, Any] = {
+        "ok": batch["ok"],
+        "action": "agent_step",
+        "count": len(actions),
+        "actions": actions,
+        "batch": batch,
+    }
+    observation = _agent_step_observe_after(params, context)
+    if observation is not None:
+        result["observation"] = observation
+    return result
+
+
 def _enforce_expected_snapshot(window, params: dict[str, Any]) -> None:
     expected = params.get("expect_snapshot_id")
     assert_expected_snapshot(window.snapshot_id(), str(expected) if expected is not None else None)
@@ -346,6 +515,9 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
             params.get("actions", []),
             stop_on_error=bool(params.get("stop_on_error", True)),
         )
+
+    if method in {"agent_step", "act", "perform_actions"}:
+        return execute_agent_step(params)
 
     if method == "get_window":
         hwnd = _window_id_from_params(params)
