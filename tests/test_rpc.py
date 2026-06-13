@@ -226,3 +226,114 @@ def test_json_rpc_batch_payload_returns_multiple_responses():
     )
     assert isinstance(response, list)
     assert [item["id"] for item in response] == [13, 14]
+
+
+def test_rpc_get_window_state_defaults_to_visual_snapshot(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=55,
+        title="Visual Target",
+        process_id=101,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 300, 200),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 300, 200),
+    )
+    calls = {}
+
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=False: target)
+
+    def fake_screenshot(hwnd, params):
+        calls["screenshot"] = {"hwnd": hwnd, "params": params}
+        return {"id": "shot-test", "path": ".tmp/test.png", "width": 300, "height": 200}
+
+    monkeypatch.setattr(rpc, "_screenshot_payload", fake_screenshot)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "get_window_state",
+            "params": {"window": {"id": 55, "app": "target.exe"}},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["action"] == "get_window_state"
+    assert response["result"]["window"]["id"] == 55
+    assert response["result"]["window"]["app"] == "target.exe"
+    assert response["result"]["generation"] == target.snapshot_id()
+    assert response["result"]["screenshots"] == [{"id": "shot-test", "path": ".tmp/test.png", "width": 300, "height": 200}]
+    assert calls["screenshot"]["hwnd"] == 55
+
+
+def test_rpc_get_window_state_can_request_accessibility_without_screenshot(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=56,
+        title="Text Target",
+        process_id=102,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 300, 200),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 300, 200),
+    )
+
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=False: target)
+    monkeypatch.setattr(rpc, "_screenshot_payload", lambda hwnd, params: (_ for _ in ()).throw(AssertionError("unexpected screenshot")))
+    monkeypatch.setattr(rpc, "get_uia_tree", lambda hwnd, max_depth=3, max_nodes=200: {"source": "test", "root": {"name": "Root"}})
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 16,
+            "method": "get_window_state",
+            "params": {"window_id": 56, "include_screenshot": False, "include_text": True},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["screenshots"] == []
+    assert response["result"]["accessibility"]["source"] == "test"
+
+
+def test_rpc_supports_codex_style_action_aliases(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=57,
+        title="Alias Target",
+        process_id=103,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(10, 20, 310, 220),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(10, 20, 310, 220),
+    )
+    pressed = {}
+
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=True: target)
+    monkeypatch.setattr(rpc, "press_key_sequence", lambda keys: pressed.setdefault("keys", keys))
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "press_key",
+            "params": {"window": {"id": 57}, "key": "Return"},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["action"] == "key"
+    assert pressed["keys"] == ["Return"]

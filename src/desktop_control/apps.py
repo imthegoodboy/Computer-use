@@ -55,11 +55,14 @@ class AppInfo:
         payload: dict[str, Any] = {
             "id": self.id,
             "display_name": self.display_name,
+            "displayName": self.display_name,
             "source": self.source,
             "launch_path": self.launch_path,
             "executable_path": self.executable_path,
             "process_name": self.process_name,
+            "processName": self.process_name,
             "running": self.running,
+            "isRunning": self.running,
             "process_ids": sorted(set(self.process_ids)),
             "app_ref": self.app_ref(),
         }

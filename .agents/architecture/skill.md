@@ -391,6 +391,7 @@ Fast desktop control is mostly about avoiding unnecessary model turns and unnece
 Use these rules:
 
 - Keep broker/helper process warm.
+- Prefer a named-pipe or stdio JSON-RPC transport over per-action CLI process startup for agent integrations.
 - Keep capture sessions warm per target window.
 - Capture screenshot only when needed for the next decision.
 - Request UIA text only when text/element targeting is needed.
@@ -514,6 +515,8 @@ computer-use/
   apps/
     desktop-broker/          # Rust/C++/C# native helper
     tray-host/               # user approval UI and stop control
+  npm/
+    bin/                     # npm CLI launcher entrypoints
   packages/
     client-python/
     client-node/

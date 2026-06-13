@@ -1,0 +1,45 @@
+{
+  "name": "desktop-control-tool",
+  "version": "0.1.0",
+  "description": "Windows desktop-control CLI for agent computer-use workflows",
+  "keywords": [
+    "desktop-control",
+    "computer-use",
+    "windows",
+    "automation",
+    "cli",
+    "agents"
+  ],
+  "homepage": "https://github.com/imthegoodboy/Computer-use#readme",
+  "bugs": {
+    "url": "https://github.com/imthegoodboy/Computer-use/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imthegoodboy/Computer-use.git"
+  },
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "os": [
+    "win32"
+  ],
+  "bin": {
+    "desktop-control": "./npm/bin/desktop-control.js",
+    "desktop-control-tool": "./npm/bin/desktop-control.js"
+  },
+  "files": [
+    "README.md",
+    "pyproject.toml",
+    "src/desktop_control/*.py",
+    "npm",
+    "tools/smoke_npm_cli.ps1"
+  ],
+  "scripts": {
+    "test": "node --test npm/test/*.test.js",
+    "smoke:npm": "powershell -ExecutionPolicy Bypass -File tools/smoke_npm_cli.ps1",
+    "doctor": "node npm/bin/desktop-control.js --npm-wrapper-doctor"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

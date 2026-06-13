@@ -5,6 +5,9 @@ from desktop_control.models import Rect, WindowInfo
 from desktop_control.policy import (
     APPROVALS_FILE_ENV,
     APPROVED_APPS_ENV,
+    BLOCKED_PROCESSES_ENV,
+    BLOCKED_TITLE_TERMS_ENV,
+    POLICY_FILE_ENV,
     REQUIRE_APPROVALS_ENV,
     approve_process_name,
     approve_window,
@@ -88,4 +91,36 @@ def test_blocked_process_cannot_be_approved(tmp_path):
 def test_blocked_process_without_exe_suffix_cannot_be_approved(tmp_path):
     with pytest.raises(DesktopControlError) as exc_info:
         approve_process_name("pwsh", explicit_path=str(tmp_path / "approvals.json"))
+    assert exc_info.value.code == "policy_denied"
+
+
+def test_env_policy_can_add_blocked_process(monkeypatch):
+    monkeypatch.setenv(BLOCKED_PROCESSES_ENV, "custom-blocked.exe")
+
+    with pytest.raises(DesktopControlError) as exc_info:
+        assert_allowed_target(window(process_name="custom-blocked.exe", title="Custom"), "click")
+
+    assert exc_info.value.code == "policy_denied"
+
+
+def test_env_policy_can_add_blocked_title_term(monkeypatch):
+    monkeypatch.setenv(BLOCKED_TITLE_TERMS_ENV, "private workspace")
+
+    with pytest.raises(DesktopControlError) as exc_info:
+        assert_allowed_target(window(process_name="safe.exe", title="Private Workspace"), "click")
+
+    assert exc_info.value.code == "policy_denied"
+
+
+def test_policy_file_can_add_blocked_terms(monkeypatch, tmp_path):
+    policy_path = tmp_path / "desktop-policy.json"
+    policy_path.write_text(
+        '{"blocked_process_names":["tenant-tool.exe"],"blocked_title_terms":["Tenant Secret"],"blocked_class_terms":[]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(POLICY_FILE_ENV, str(policy_path))
+
+    with pytest.raises(DesktopControlError) as exc_info:
+        assert_allowed_target(window(process_name="tenant-tool.exe", title="Tenant Tool"), "click")
+
     assert exc_info.value.code == "policy_denied"

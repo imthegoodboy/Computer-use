@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .apps import launch_app, list_apps
 from .audit import record_audit_event
-from .capture import capture_window
+from .capture import capture_window, default_capture_path
 from .cli import _resolve_checked_point, _window_for_action
 from .errors import DesktopControlError
 from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, send_text
 from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
-from .windows import list_windows, resolve_window_ref
+from .windows import get_window, list_windows, resolve_window_ref
 
 
 def _rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -42,6 +44,126 @@ def _require(params: dict[str, Any], key: str) -> Any:
     if key not in params:
         raise DesktopControlError("invalid_request", f"Missing required parameter: {key}")
     return params[key]
+
+
+def _window_id_from_params(params: dict[str, Any]) -> int:
+    raw_window = params.get("window")
+    if isinstance(raw_window, dict):
+        for key in ("hwnd", "id", "window_id"):
+            value = raw_window.get(key)
+            if value not in (None, ""):
+                return int(value)
+    for key in ("window_id", "hwnd", "id"):
+        value = params.get(key)
+        if value not in (None, ""):
+            return int(value)
+    raise DesktopControlError("invalid_request", "Missing required parameter: window_id")
+
+
+def _selector_from_params(params: dict[str, Any]) -> dict[str, Any]:
+    raw_selector = params.get("selector")
+    if isinstance(raw_selector, dict):
+        selector = dict(raw_selector)
+    else:
+        selector = {}
+        for key in (
+            "name",
+            "name_contains",
+            "automation_id",
+            "class_name",
+            "control_type",
+            "index",
+            "allow_multiple",
+        ):
+            if key in params:
+                selector[key] = params[key]
+        if "element_index" in params:
+            selector["index"] = params["element_index"]
+            selector.setdefault("allow_multiple", True)
+    if not selector:
+        raise DesktopControlError("invalid_selector", "At least one UIA selector field is required")
+    return selector
+
+
+def _capture_output_path(hwnd: int, params: dict[str, Any]) -> str:
+    for key in ("out", "screenshot_path", "path"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    screenshot_value = params.get("screenshot")
+    if isinstance(screenshot_value, str) and screenshot_value.strip():
+        return screenshot_value
+    return str(default_capture_path(hwnd))
+
+
+def _include_screenshot(params: dict[str, Any], default: bool) -> bool:
+    if "include_screenshot" in params:
+        return bool(params["include_screenshot"])
+    screenshot_value = params.get("screenshot")
+    if isinstance(screenshot_value, bool):
+        return screenshot_value
+    if isinstance(screenshot_value, str) and screenshot_value.strip():
+        return True
+    return default
+
+
+def _screenshot_payload(hwnd: int, params: dict[str, Any]) -> dict[str, Any]:
+    screenshot = capture_window(
+        hwnd,
+        _capture_output_path(hwnd, params),
+        backend=params.get("screenshot_backend", params.get("backend", "auto")),
+    )
+    image = screenshot.get("image")
+    digest = image.get("sha256", "") if isinstance(image, dict) else ""
+    screenshot_id = f"shot-{str(digest)[:16]}" if digest else f"shot-{screenshot.get('window_snapshot_id', hwnd)}"
+    return {"id": screenshot_id, **screenshot}
+
+
+def build_window_state(params: dict[str, Any], *, default_screenshot: bool = True) -> dict[str, Any]:
+    hwnd = _window_id_from_params(params)
+    include_screenshot = _include_screenshot(params, default=default_screenshot)
+    include_text = bool(params.get("include_text", params.get("include_ui", False)))
+    if not include_screenshot and not include_text:
+        raise DesktopControlError(
+            "invalid_request",
+            "Window state must include at least one of screenshot or UI text",
+        )
+
+    window = _window_for_action(hwnd, "get_window_state", activate=bool(params.get("activate", False)))
+    result: dict[str, Any] = {
+        "ok": True,
+        "action": "get_window_state",
+        "window": window.to_dict(),
+        "generation": window.snapshot_id(),
+        "captured_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "screenshots": [],
+    }
+    if include_screenshot:
+        result["screenshots"].append(_screenshot_payload(hwnd, params))
+    if include_text:
+        result["accessibility"] = get_uia_tree(
+            hwnd,
+            max_depth=int(params.get("max_depth", 3)),
+            max_nodes=int(params.get("max_nodes", 200)),
+        )
+    return result
+
+
+def _normalize_method_and_params(method: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    normalized = method
+    next_params = dict(params)
+    aliases = {
+        "keypress": "key",
+        "press_key": "key",
+        "type": "type_text",
+        "set_value": "set_element_value",
+        "perform_secondary_action": "invoke_element",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if method == "double_click":
+        normalized = "click"
+        next_params.setdefault("count", 2)
+    return normalized, next_params
 
 
 def execute_batch_actions(actions: list[Any], stop_on_error: bool = True) -> dict[str, Any]:
@@ -121,11 +243,37 @@ def _enforce_expected_snapshot(window, params: dict[str, Any]) -> None:
 
 
 def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
+    method, params = _normalize_method_and_params(method, params)
+
     if method == "batch":
         return execute_batch_actions(
             params.get("actions", []),
             stop_on_error=bool(params.get("stop_on_error", True)),
         )
+
+    if method == "get_window":
+        hwnd = _window_id_from_params(params)
+        window = get_window(hwnd)
+        return {"ok": True, "window": window.to_dict()}
+
+    if method == "activate_window":
+        hwnd = _window_id_from_params(params)
+        window = _window_for_action(hwnd, "activate_window", activate=True)
+        return {"ok": True, "action": "activate_window", "window": window.to_dict()}
+
+    if method == "get_window_state":
+        return build_window_state(params, default_screenshot=True)
+
+    if method == "wait":
+        seconds = float(params.get("seconds", 0.0))
+        if params.get("timeout_ms") is not None:
+            seconds = float(params["timeout_ms"]) / 1000.0
+        elif params.get("timeout") is not None:
+            seconds = float(params["timeout"])
+        seconds = max(0.0, min(seconds, 60.0))
+        if seconds:
+            time.sleep(seconds)
+        return {"ok": True, "action": "wait", "seconds": seconds}
 
     if method == "list_windows":
         windows = list_windows(
@@ -168,7 +316,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         )
 
     if method == "state":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "state", activate=bool(params.get("activate", False)))
         result: dict[str, Any] = {"ok": True, "window": window.to_dict()}
         if params.get("screenshot"):
@@ -186,20 +334,17 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return result
 
     if method == "screenshot":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "screenshot", activate=bool(params.get("activate", False)))
+        screenshot = _screenshot_payload(hwnd, params)
         return {
             "ok": True,
             "window": window.to_dict(),
-            "screenshot": capture_window(
-                hwnd,
-                str(_require(params, "out")),
-                backend=params.get("backend", "auto"),
-            ),
+            "screenshot": screenshot,
         }
 
     if method == "click":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "click", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
@@ -208,11 +353,16 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
             int(_require(params, "y")),
             params.get("space", "window"),
         )
-        click_at(x, y, button=params.get("button", "left"), count=int(params.get("count", 1)))
+        click_at(
+            x,
+            y,
+            button=params.get("button", params.get("mouse_button", "left")),
+            count=int(params.get("count", params.get("click_count", 1))),
+        )
         return {"ok": True, "action": "click", "window": window.to_dict(), "screen_point": {"x": x, "y": y}}
 
     if method == "move":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "move", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
@@ -225,7 +375,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "action": "move", "window": window.to_dict(), "screen_point": {"x": x, "y": y}}
 
     if method == "scroll":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "scroll", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         x, y = _resolve_checked_point(
@@ -234,11 +384,20 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
             int(_require(params, "y")),
             params.get("space", "window"),
         )
-        scroll_at(x, y, int(_require(params, "delta")))
+        raw_delta = params.get("delta")
+        if raw_delta is None:
+            scroll_y = params.get("scrollY", params.get("scroll_y"))
+            if scroll_y is None:
+                raise DesktopControlError("invalid_request", "Missing required parameter: delta")
+            raw_scroll_y = float(scroll_y)
+            raw_delta = -round(raw_scroll_y / 120.0)
+            if raw_delta == 0 and raw_scroll_y != 0:
+                raw_delta = -1 if raw_scroll_y > 0 else 1
+        scroll_at(x, y, int(raw_delta))
         return {"ok": True, "action": "scroll", "window": window.to_dict(), "screen_point": {"x": x, "y": y}}
 
     if method == "drag":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "drag", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         from_x, from_y = _resolve_checked_point(
@@ -265,7 +424,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "action": "drag", "window": window.to_dict(), "from": {"x": from_x, "y": from_y}, "to": {"x": to_x, "y": to_y}}
 
     if method == "type_text":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "type_text", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         text = str(params.get("text", ""))
@@ -276,17 +435,21 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "action": "type_text", "window": window.to_dict(), "characters": len(text), "method": text_method}
 
     if method == "key":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "key", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         keys = params.get("keys")
+        if keys is None and "key" in params:
+            keys = [params["key"]]
+        if isinstance(keys, str):
+            keys = [keys]
         if not isinstance(keys, list) or not keys:
             raise DesktopControlError("invalid_request", "keys must be a non-empty list")
         press_key_sequence([str(key) for key in keys])
         return {"ok": True, "action": "key", "window": window.to_dict(), "keys": keys}
 
     if method == "find_elements":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         selector = _selector_from_params(params)
         window = _window_for_action(hwnd, "find_elements", activate=False)
         return {
@@ -302,7 +465,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         }
 
     if method == "click_element":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "click_element", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         result = click_uia_element(
@@ -317,7 +480,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return result
 
     if method == "invoke_element":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "invoke_element", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         result = invoke_uia_element(
@@ -330,7 +493,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return result
 
     if method == "set_element_value":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         window = _window_for_action(hwnd, "set_element_value", activate=bool(params.get("activate", True)))
         _enforce_expected_snapshot(window, params)
         value = str(params.get("value", ""))
@@ -356,7 +519,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
         )
 
     if method == "wait_element":
-        hwnd = int(_require(params, "window_id"))
+        hwnd = _window_id_from_params(params)
         selector = _selector_from_params(params)
         window = _window_for_action(hwnd, "wait_element", activate=False)
         result = wait_for_element(
@@ -410,20 +573,6 @@ def _window_ref_from_params(params: dict[str, Any]) -> dict[str, Any]:
             "recover_window requires window_ref or at least one identity field",
         )
     return ref
-
-
-def _selector_from_params(params: dict[str, Any]) -> dict[str, Any]:
-    raw_selector = params.get("selector")
-    if isinstance(raw_selector, dict):
-        selector = dict(raw_selector)
-    else:
-        selector = {}
-        for key in ("name", "name_contains", "automation_id", "class_name", "control_type", "index", "allow_multiple"):
-            if key in params:
-                selector[key] = params[key]
-    if not selector:
-        raise DesktopControlError("invalid_selector", "At least one UIA selector field is required")
-    return selector
 
 
 def handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
