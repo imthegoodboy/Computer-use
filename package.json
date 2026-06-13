@@ -32,6 +32,7 @@
     "pyproject.toml",
     "src/desktop_control/*.py",
     "npm",
+    "tools/smoke_agent_run.ps1",
     "tools/smoke_agent_step.ps1",
     "tools/smoke_observe.ps1",
     "tools/smoke_npm_cli.ps1"

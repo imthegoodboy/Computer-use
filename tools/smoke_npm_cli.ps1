@@ -50,6 +50,15 @@ try {
         throw "agent-step help did not expose the expected command/options"
     }
 
+    $agentRunHelp = node .\npm\bin\desktop-control.js agent-run --help
+    if ($LASTEXITCODE -ne 0) {
+        throw "desktop-control agent-run --help exited with $LASTEXITCODE"
+    }
+    $agentRunHelpText = $agentRunHelp -join [Environment]::NewLine
+    if ($agentRunHelpText -notmatch "agent-run" -or $agentRunHelpText -notmatch "--no-observe-after") {
+        throw "agent-run help did not expose the expected command/options"
+    }
+
     "npm CLI smoke passed"
 }
 finally {

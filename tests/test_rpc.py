@@ -1,4 +1,4 @@
-from desktop_control.rpc import execute_agent_step, handle_rpc_payload, handle_rpc_request, normalize_agent_action
+from desktop_control.rpc import execute_agent_run, execute_agent_step, handle_rpc_payload, handle_rpc_request, normalize_agent_action
 
 
 def test_rpc_rejects_unknown_method():
@@ -547,3 +547,103 @@ def test_rpc_agent_step_alias_runs_actions(monkeypatch):
     assert response is not None
     assert response["result"]["action"] == "agent_step"
     assert captured["params"]["action"] == {"type": "move", "x": 11, "y": 12}
+
+
+def test_execute_agent_run_observes_acts_and_observes_after(monkeypatch):
+    from desktop_control import rpc
+
+    observed = []
+    captured = {}
+
+    def fake_observe(params):
+        observed.append(dict(params))
+        snapshot_id = "snap-before" if len(observed) == 1 else "snap-after"
+        return {
+            "ok": True,
+            "action": "observe",
+            "generation": snapshot_id,
+            "window": {"id": 80, "app": "target.exe", "snapshot_id": snapshot_id},
+            "screenshots": [{"id": f"shot-{snapshot_id}"}],
+        }
+
+    def fake_agent_step(params):
+        captured["params"] = dict(params)
+        return {"ok": True, "action": "agent_step", "count": 1}
+
+    monkeypatch.setattr(rpc, "observe_window", fake_observe)
+    monkeypatch.setattr(rpc, "execute_agent_step", fake_agent_step)
+
+    result = execute_agent_run(
+        {
+            "query": "Target",
+            "space": "client",
+            "actions": [{"type": "click", "x": 10, "y": 20}],
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["action"] == "agent_run"
+    assert result["observation"]["generation"] == "snap-before"
+    assert result["next_observation"]["generation"] == "snap-after"
+    assert result["current_observation"]["generation"] == "snap-after"
+    assert [item["phase"] for item in result["trace"]] == ["observe", "act", "observe_after"]
+    assert observed[0]["query"] == "Target"
+    assert observed[0]["activate"] is True
+    assert observed[0]["settle_ms"] == 150
+    assert observed[1]["window"] == {"id": 80, "app": "target.exe", "snapshot_id": "snap-before"}
+    assert captured["params"]["window"] == {"id": 80, "app": "target.exe", "snapshot_id": "snap-before"}
+    assert captured["params"]["expect_snapshot_id"] == "snap-before"
+    assert captured["params"]["strict_snapshot"] is False
+    assert captured["params"]["observe_after"] is False
+    assert captured["params"]["space"] == "client"
+
+
+def test_execute_agent_run_can_observe_without_actions(monkeypatch):
+    from desktop_control import rpc
+
+    monkeypatch.setattr(
+        rpc,
+        "observe_window",
+        lambda params: {
+            "ok": True,
+            "action": "observe",
+            "generation": "snap-only",
+            "window": {"id": 81, "snapshot_id": "snap-only"},
+            "screenshots": [{"id": "shot-only"}],
+            "selection": {"source": "foreground"},
+        },
+    )
+
+    result = execute_agent_run({})
+
+    assert result["ok"] is True
+    assert result["action"] == "agent_run"
+    assert result["observation"]["generation"] == "snap-only"
+    assert result["current_observation"]["generation"] == "snap-only"
+    assert "step" not in result
+    assert "next_observation" not in result
+
+
+def test_rpc_agent_run_alias(monkeypatch):
+    from desktop_control import rpc
+
+    captured = {}
+
+    def fake_agent_run(params):
+        captured["params"] = params
+        return {"ok": True, "action": "agent_run", "trace": []}
+
+    monkeypatch.setattr(rpc, "execute_agent_run", fake_agent_run)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "run",
+            "params": {"query": "Target", "actions": [{"type": "screenshot"}]},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["action"] == "agent_run"
+    assert captured["params"]["query"] == "Target"
