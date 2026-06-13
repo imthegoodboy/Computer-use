@@ -271,6 +271,123 @@ def test_rpc_get_window_state_defaults_to_visual_snapshot(monkeypatch):
     assert calls["screenshot"]["hwnd"] == 55
 
 
+def test_rpc_observe_selects_one_query_match(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=58,
+        title="Observed Target",
+        process_id=104,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 300, 200),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 300, 200),
+    )
+
+    monkeypatch.setattr(rpc, "list_windows", lambda include_hidden=False, query=None: [target])
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=False: target)
+    monkeypatch.setattr(
+        rpc,
+        "_screenshot_payload",
+        lambda hwnd, params: {"id": "shot-observe", "path": ".tmp/observe.png", "width": 300, "height": 200},
+    )
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 18,
+            "method": "observe",
+            "params": {"query": "Observed"},
+        }
+    )
+
+    assert response is not None
+    assert response["result"]["action"] == "observe"
+    assert response["result"]["selection"] == {"source": "query", "query": "Observed", "match_count": 1}
+    assert response["result"]["window"]["id"] == 58
+    assert response["result"]["screenshots"][0]["id"] == "shot-observe"
+
+
+def test_rpc_observe_rejects_ambiguous_query(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    matches = [
+        WindowInfo(
+            hwnd=59,
+            title="Target One",
+            process_id=105,
+            process_name="target.exe",
+            class_name="TargetWindow",
+            rect=Rect(0, 0, 300, 200),
+            visible=True,
+            minimized=False,
+            client_rect=Rect(0, 0, 300, 200),
+        ),
+        WindowInfo(
+            hwnd=60,
+            title="Target Two",
+            process_id=106,
+            process_name="target.exe",
+            class_name="TargetWindow",
+            rect=Rect(0, 0, 300, 200),
+            visible=True,
+            minimized=False,
+            client_rect=Rect(0, 0, 300, 200),
+        ),
+    ]
+
+    monkeypatch.setattr(rpc, "list_windows", lambda include_hidden=False, query=None: matches)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 19,
+            "method": "observe",
+            "params": {"query": "Target"},
+        }
+    )
+
+    assert response is not None
+    assert response["error"]["data"]["desktop_code"] == "ambiguous_window"
+    assert len(response["error"]["data"]["details"]["matches"]) == 2
+
+
+def test_rpc_observe_defaults_to_foreground_window(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=61,
+        title="Foreground Target",
+        process_id=107,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 300, 200),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 300, 200),
+    )
+
+    monkeypatch.setattr(rpc, "get_foreground_window", lambda: target)
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=False: target)
+    monkeypatch.setattr(
+        rpc,
+        "_screenshot_payload",
+        lambda hwnd, params: {"id": "shot-foreground", "path": ".tmp/foreground.png", "width": 300, "height": 200},
+    )
+
+    response = handle_rpc_request({"jsonrpc": "2.0", "id": 20, "method": "view", "params": {}})
+
+    assert response is not None
+    assert response["result"]["action"] == "observe"
+    assert response["result"]["selection"] == {"source": "foreground"}
+    assert response["result"]["window"]["id"] == 61
+
+
 def test_rpc_get_window_state_can_request_accessibility_without_screenshot(monkeypatch):
     from desktop_control import rpc
     from desktop_control.models import Rect, WindowInfo

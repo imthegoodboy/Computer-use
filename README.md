@@ -9,6 +9,7 @@ This project is an independent implementation. It does not decompile or depend o
 - List visible desktop windows.
 - List launchable Start Menu apps and running window-owning apps.
 - Launch apps by id, display name, process name, shortcut, or executable path.
+- Observe the current foreground window or a selected window by query/ref and return visual agent state.
 - Capture window state as JSON.
 - Capture a window screenshot.
 - Capture screenshots through selectable `auto`, `mss`, or `pil` backends with checksum and nonblank metadata.
@@ -35,6 +36,7 @@ Run commands from the repository root:
 $env:PYTHONPATH = "src"
 python -m desktop_control list-windows --pretty
 python -m desktop_control list-apps --query notepad --pretty
+python -m desktop_control observe --query notepad --pretty
 python -m desktop_control get-window --window-id 123456 --pretty
 python -m desktop_control get-window-state --window-id 123456 --pretty
 ```
@@ -58,7 +60,27 @@ python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pr
 ```
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
-`get-window-state` captures a screenshot by default for agent visual grounding; set `DESKTOP_CONTROL_CAPTURE_DIR` or pass `--out` to choose where screenshots are written.
+`observe` and `get-window-state` capture a screenshot by default for agent visual grounding; set `DESKTOP_CONTROL_CAPTURE_DIR` or pass `--out` to choose where screenshots are written.
+
+## Agent Observe Flow
+
+Use `observe` as the first visual step. It selects exactly one target window by query, saved `window_ref`, explicit id, or the current foreground window when no selector is provided. It returns the canonical `window`, current `snapshot_id`, screenshot metadata, and optional UI Automation text in one JSON payload.
+
+```powershell
+desktop-control observe --query notepad --include-text --pretty
+desktop-control view --ref-file .tmp\window-ref.json --pretty
+desktop-control observe --pretty
+```
+
+If a query matches multiple windows, `observe` fails with `ambiguous_window` and returns candidate summaries. Pass a more specific query or use a saved `window_ref`; use `--allow-ambiguous` only when the first deterministic match is acceptable.
+
+After observing, use the returned `window.id` for actions and pass the returned `window.snapshot_id` to `--expect-snapshot-id` for coordinate actions:
+
+```powershell
+desktop-control click --window-id 123456 --x 120 --y 90 --expect-snapshot-id <snapshot_id> --pretty
+desktop-control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
+desktop-control observe --window-id 123456 --pretty
+```
 
 ## NPM CLI Package
 
@@ -68,6 +90,7 @@ The npm package installs thin Node launchers for the Python CLI. Command behavio
 npm install -g .
 desktop-control --version
 desktop-control list-windows --pretty
+desktop-control observe --query notepad --pretty
 desktop-control-tool get-window-state --window-id 123456 --pretty
 ```
 
@@ -145,10 +168,10 @@ python -m desktop_control serve-stdio
 Send one JSON-RPC request per line:
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"list_windows","params":{"query":"notepad"}}
+{"jsonrpc":"2.0","id":1,"method":"observe","params":{"query":"notepad","include_text":true}}
 ```
 
-Supported methods are `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+Supported methods are `list_apps`, `launch_app`, `list_windows`, `observe`, `view`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
 
 ## Named-Pipe JSON-RPC
 
@@ -275,6 +298,12 @@ For capture reliability:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_capture.ps1
+```
+
+For agent visual observation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_observe.ps1
 ```
 
 For app launch:

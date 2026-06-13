@@ -72,6 +72,13 @@ def get_window(hwnd: int) -> WindowInfo:
     return _window_info(hwnd)
 
 
+def get_foreground_window() -> WindowInfo:
+    hwnd = int(win32gui.GetForegroundWindow())
+    if not hwnd:
+        raise DesktopControlError("window_not_found", "No foreground window is available")
+    return get_window(hwnd)
+
+
 def _text(value: object) -> str:
     return str(value or "").strip()
 

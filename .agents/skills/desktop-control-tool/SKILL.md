@@ -60,6 +60,8 @@ desktop-control list-windows --pretty
 desktop-control list-apps --query notepad --pretty
 desktop-control launch-app --app notepad.exe --wait-query Notepad --pretty
 desktop-control approve-app --process-name notepad.exe --pretty
+desktop-control observe --query notepad --include-text --pretty
+desktop-control view --ref-file .tmp\window-ref.json --pretty
 desktop-control get-window --window-id <hwnd> --pretty
 desktop-control activate-window --window-id <hwnd> --pretty
 desktop-control get-window-state --window-id <hwnd> --include-text --pretty
@@ -85,7 +87,9 @@ desktop-control pipe-request --name desktop-control --request-file .tmp\request.
 
 Each returned window includes `window_ref`. If an action reports a stale or missing window, recover explicitly with `recover-window` or JSON-RPC `recover_window`, refresh state, then retry only when the recovered target is unambiguous.
 
-The stdio and named-pipe servers accept JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+The stdio and named-pipe servers accept JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `observe`, `view`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+
+For agent visual grounding, start with `observe` instead of manually listing windows and then calling `get-window-state`. `observe` selects a target by query/ref/id or the foreground window, captures a screenshot by default, can include UI Automation text, and returns the canonical window object and snapshot id for later actions.
 
 Policy defaults are safe but configurable. Use `DESKTOP_CONTROL_BLOCKED_PROCESSES`, `DESKTOP_CONTROL_BLOCKED_TITLE_TERMS`, `DESKTOP_CONTROL_BLOCKED_CLASS_TERMS`, or `DESKTOP_CONTROL_POLICY_FILE` to add deployment-specific blocked targets without editing source. These settings add to the built-in hard denials; they do not remove terminal, credential, password-manager, security, or agent-host protections.
 
