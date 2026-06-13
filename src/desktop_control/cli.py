@@ -128,6 +128,49 @@ def command_get_window_state(args: argparse.Namespace) -> dict[str, Any]:
     return build_window_state(params, default_screenshot=True)
 
 
+def _optional_window_ref_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
+    if getattr(args, "ref_file", None):
+        payload = json.loads(Path(args.ref_file).read_text(encoding="utf-8-sig"))
+        return _extract_window_ref_payload(payload)
+
+    ref: dict[str, Any] = {}
+    for arg_name, ref_name in (
+        ("window_id", "hwnd"),
+        ("process_id", "process_id"),
+        ("process_name", "process_name"),
+        ("title", "title"),
+        ("title_contains", "title_contains"),
+        ("class_name", "class_name"),
+    ):
+        value = getattr(args, arg_name, None)
+        if value not in (None, ""):
+            ref[ref_name] = value
+    return ref or None
+
+
+def command_observe(args: argparse.Namespace) -> dict[str, Any]:
+    from .rpc import observe_window
+
+    params: dict[str, Any] = {
+        "include_screenshot": not args.no_screenshot,
+        "include_text": args.include_text or args.include_ui,
+        "max_depth": args.max_depth,
+        "max_nodes": args.max_nodes,
+        "screenshot_backend": args.screenshot_backend,
+        "activate": args.activate,
+        "include_hidden": args.include_hidden,
+        "allow_ambiguous": args.allow_ambiguous,
+    }
+    if args.query:
+        params["query"] = args.query
+    if args.out:
+        params["out"] = args.out
+    ref = _optional_window_ref_from_args(args)
+    if ref:
+        params["window_ref"] = ref
+    return observe_window(params)
+
+
 def command_state(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "state", activate=args.activate)
     payload: dict[str, Any] = {
@@ -515,6 +558,32 @@ def build_parser() -> argparse.ArgumentParser:
     get_state_parser.add_argument("--activate", action="store_true")
     get_state_parser.add_argument("--pretty", action="store_true")
     get_state_parser.set_defaults(func=command_get_window_state)
+
+    observe_parser = subparsers.add_parser(
+        "observe",
+        aliases=["view"],
+        help="Select a window by query/ref/current foreground and return visual agent state",
+    )
+    observe_parser.add_argument("--window-id", "--id", dest="window_id", type=int)
+    observe_parser.add_argument("--query", help="Select exactly one visible window by title or process name")
+    observe_parser.add_argument("--ref-file", help="JSON file containing a window_ref, window, or full command result")
+    observe_parser.add_argument("--process-id", type=int)
+    observe_parser.add_argument("--process-name")
+    observe_parser.add_argument("--title")
+    observe_parser.add_argument("--title-contains")
+    observe_parser.add_argument("--class-name")
+    observe_parser.add_argument("--include-hidden", action="store_true")
+    observe_parser.add_argument("--allow-ambiguous", action="store_true")
+    observe_parser.add_argument("--out", help="Screenshot output path; defaults under DESKTOP_CONTROL_CAPTURE_DIR")
+    observe_parser.add_argument("--no-screenshot", action="store_true")
+    observe_parser.add_argument("--include-text", action="store_true")
+    observe_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    observe_parser.add_argument("--max-depth", type=int, default=3)
+    observe_parser.add_argument("--max-nodes", type=int, default=200)
+    observe_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
+    observe_parser.add_argument("--activate", action="store_true")
+    observe_parser.add_argument("--pretty", action="store_true")
+    observe_parser.set_defaults(func=command_observe)
 
     state_parser = subparsers.add_parser("state", help="Get window state")
     state_parser.add_argument("--window-id", type=int, required=True)

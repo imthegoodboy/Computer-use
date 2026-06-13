@@ -17,7 +17,7 @@ from .input import click_at, drag_at, move_to, press_key_sequence, scroll_at, se
 from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
-from .windows import get_window, list_windows, resolve_window_ref
+from .windows import get_foreground_window, get_window, list_windows, resolve_window_ref
 
 
 def _rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -149,6 +149,101 @@ def build_window_state(params: dict[str, Any], *, default_screenshot: bool = Tru
     return result
 
 
+def _window_summary(window) -> dict[str, Any]:
+    return {
+        "id": window.hwnd,
+        "hwnd": window.hwnd,
+        "app": window.process_name,
+        "title": window.title,
+        "process_id": window.process_id,
+        "process_name": window.process_name,
+        "class_name": window.class_name,
+        "snapshot_id": window.snapshot_id(),
+    }
+
+
+def _select_observe_window(params: dict[str, Any]):
+    include_hidden = bool(params.get("include_hidden", False))
+    allow_ambiguous = bool(params.get("allow_ambiguous", False))
+    raw_ref = params.get("window_ref")
+    raw_window = params.get("window")
+
+    if isinstance(raw_ref, dict):
+        window = resolve_window_ref(raw_ref, include_hidden=include_hidden, allow_ambiguous=allow_ambiguous)
+        return window, {"source": "window_ref", "window_ref": dict(raw_ref)}
+
+    if isinstance(raw_window, dict):
+        ref = {}
+        for source_key, ref_key in (
+            ("hwnd", "hwnd"),
+            ("id", "hwnd"),
+            ("window_id", "hwnd"),
+            ("process_id", "process_id"),
+            ("process_name", "process_name"),
+            ("app", "process_name"),
+            ("title", "title"),
+            ("class_name", "class_name"),
+        ):
+            value = raw_window.get(source_key)
+            if value not in (None, ""):
+                ref[ref_key] = value
+        if ref:
+            window = resolve_window_ref(ref, include_hidden=include_hidden, allow_ambiguous=allow_ambiguous)
+            return window, {"source": "window", "window_ref": ref}
+
+    for key in ("window_id", "hwnd", "id"):
+        value = params.get(key)
+        if value not in (None, ""):
+            window = get_window(int(value))
+            return window, {"source": key}
+
+    query = params.get("query")
+    if isinstance(query, str) and query.strip():
+        matches = list_windows(include_hidden=include_hidden, query=query)
+        if not matches:
+            raise DesktopControlError(
+                "window_not_found",
+                "No window matched the observe query",
+                {"query": query, "include_hidden": include_hidden},
+            )
+        if len(matches) > 1 and not allow_ambiguous:
+            raise DesktopControlError(
+                "ambiguous_window",
+                "Multiple windows matched the observe query",
+                {"query": query, "matches": [_window_summary(window) for window in matches[:8]]},
+            )
+        return matches[0], {
+            "source": "query",
+            "query": query,
+            "match_count": len(matches),
+        }
+
+    window = get_foreground_window()
+    return window, {"source": "foreground"}
+
+
+def observe_window(params: dict[str, Any]) -> dict[str, Any]:
+    window, selection = _select_observe_window(params)
+    state_params = {
+        key: value
+        for key, value in params.items()
+        if key
+        not in {
+            "active",
+            "allow_ambiguous",
+            "include_hidden",
+            "query",
+            "window",
+            "window_ref",
+        }
+    }
+    state_params["window_id"] = window.hwnd
+    state = build_window_state(state_params, default_screenshot=True)
+    state["action"] = "observe"
+    state["selection"] = selection
+    return state
+
+
 def _normalize_method_and_params(method: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     normalized = method
     next_params = dict(params)
@@ -158,6 +253,7 @@ def _normalize_method_and_params(method: str, params: dict[str, Any]) -> tuple[s
         "type": "type_text",
         "set_value": "set_element_value",
         "perform_secondary_action": "invoke_element",
+        "view": "observe",
     }
     normalized = aliases.get(normalized, normalized)
     if method == "double_click":
@@ -263,6 +359,9 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
     if method == "get_window_state":
         return build_window_state(params, default_screenshot=True)
+
+    if method == "observe":
+        return observe_window(params)
 
     if method == "wait":
         seconds = float(params.get("seconds", 0.0))

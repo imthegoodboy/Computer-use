@@ -33,6 +33,14 @@ try {
         throw "list-windows payload did not include windows"
     }
 
+    $observeHelp = node .\npm\bin\desktop-control.js observe --help
+    if ($LASTEXITCODE -ne 0) {
+        throw "desktop-control observe --help exited with $LASTEXITCODE"
+    }
+    if (($observeHelp -join [Environment]::NewLine) -notmatch "--query") {
+        throw "observe help did not include --query"
+    }
+
     "npm CLI smoke passed"
 }
 finally {
