@@ -515,6 +515,8 @@ computer-use/
   apps/
     desktop-broker/          # Rust/C++/C# native helper
     tray-host/               # user approval UI and stop control
+  npm/
+    bin/                     # npm CLI launcher entrypoints
   packages/
     client-python/
     client-node/

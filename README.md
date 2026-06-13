@@ -22,8 +22,8 @@ This project is an independent implementation. It does not decompile or depend o
 - Batch multiple actions in one CLI/RPC call for lower overhead.
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
+- Install as an npm CLI package with `desktop-control` and `desktop-control-tool` binaries.
 - Keep a warm JSON-RPC stdio process for agent integrations.
-- Expose the same actions as a Model Context Protocol (MCP) tools server over stdio.
 - Keep a warm length-prefixed JSON-RPC named-pipe process for Windows agent integrations.
 - Write structured JSONL audit logs when `DESKTOP_CONTROL_AUDIT_LOG` is set.
 
@@ -59,6 +59,39 @@ python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pr
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
 `get-window-state` captures a screenshot by default for agent visual grounding; set `DESKTOP_CONTROL_CAPTURE_DIR` or pass `--out` to choose where screenshots are written.
+
+## NPM CLI Package
+
+The npm package installs thin Node launchers for the Python CLI. Command behavior stays in `src/desktop_control`; the wrapper only finds Python, sets `PYTHONPATH`, and forwards arguments without a shell.
+
+```powershell
+npm install -g .
+desktop-control --version
+desktop-control list-windows --pretty
+desktop-control-tool get-window-state --window-id 123456 --pretty
+```
+
+For local development without global install:
+
+```powershell
+node .\npm\bin\desktop-control.js --npm-wrapper-doctor
+node .\npm\bin\desktop-control.js list-apps --query notepad --pretty
+```
+
+Wrapper configuration:
+
+- `DESKTOP_CONTROL_PYTHON`: absolute Python executable or launcher name.
+- `DESKTOP_CONTROL_PYTHON_ARGS`: extra Python launcher args such as `-X utf8`.
+- `DESKTOP_CONTROL_PACKAGE_ROOT`: override package root detection.
+- `DESKTOP_CONTROL_PYTHONPATH_MODE`: `prepend` by default, or `append`, `replace`, `preserve`.
+- `DESKTOP_CONTROL_PYTHONPATH_EXTRA`: additional paths appended to the wrapper-managed `PYTHONPATH`.
+
+For high-throughput agents, start a warm process instead of launching Python per action:
+
+```powershell
+desktop-control serve-stdio
+desktop-control serve-pipe --name desktop-control
+```
 
 ## App Approvals
 
@@ -117,18 +150,7 @@ Send one JSON-RPC request per line:
 
 Supported methods are `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
 
-## MCP Mode
-
-For MCP-capable agents, run a stdio MCP tools server:
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m desktop_control serve-mcp
-```
-
-The MCP server supports `initialize`, `tools/list`, and `tools/call`. It exposes the same desktop-control actions as tools, including `list_apps`, `list_windows`, `get_window_state`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `press_key`, UI Automation element tools, wait/recovery tools, and `batch`. Tool call results include both text content and `structuredContent` JSON so agents can reason over window ids, screenshot ids, generation ids, policy denials, and recovery details.
-
-Tool execution errors such as stale snapshots, approval requirements, blocked targets, or missing windows are returned as MCP tool results with `isError: true`, not as transport failures. Unknown MCP tools and malformed MCP requests still return JSON-RPC protocol errors.
+## Named-Pipe JSON-RPC
 
 For a local Windows helper process closer to Codex Computer Use's native transport, use length-prefixed JSON-RPC over a named pipe:
 
@@ -267,10 +289,10 @@ For named-pipe transport:
 powershell -ExecutionPolicy Bypass -File tools\smoke_pipe.ps1
 ```
 
-For MCP stdio transport:
+For npm CLI packaging:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\smoke_mcp.ps1
+powershell -ExecutionPolicy Bypass -File tools\smoke_npm_cli.ps1
 ```
 
 For stale-window recovery:

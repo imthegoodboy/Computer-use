@@ -38,7 +38,7 @@ Use this skill when the user wants an agent to research, design, build, or use a
 
 - Build an independent helper; do not depend on Codex private helper internals.
 - Use a local broker/helper process with a narrow RPC protocol.
-- In this repository, the local MVP entrypoint is `python -m desktop_control` with `PYTHONPATH=src`.
+- In this repository, the local MVP entrypoints are the npm `desktop-control` CLI wrapper and `python -m desktop_control` with `PYTHONPATH=src`.
 - Make all actions target a canonical window object returned by discovery or snapshot APIs.
 - Include snapshot generation ids and screenshot ids so stale element indexes and stale coordinates can be rejected.
 - Add structured errors for stale handles, activation failure, policy denial, UIA failure, capture failure, and user interruption.
@@ -50,43 +50,42 @@ Use this skill when the user wants an agent to research, design, build, or use a
 Use these from the repository root:
 
 ```powershell
+npm install -g .
+desktop-control --npm-wrapper-doctor
 $env:PYTHONPATH = "src"
 $env:DESKTOP_CONTROL_REQUIRE_APPROVALS = "1"
 $env:DESKTOP_CONTROL_APPROVALS_FILE = ".tmp\desktop-control-approvals.json"
 $env:DESKTOP_CONTROL_AUDIT_LOG = ".tmp\desktop-control-audit.jsonl"
-python -m desktop_control list-windows --pretty
-python -m desktop_control list-apps --query notepad --pretty
-python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
-python -m desktop_control approve-app --process-name notepad.exe --pretty
-python -m desktop_control get-window --window-id <hwnd> --pretty
-python -m desktop_control activate-window --window-id <hwnd> --pretty
-python -m desktop_control get-window-state --window-id <hwnd> --include-text --pretty
-python -m desktop_control state --window-id <hwnd> --include-ui --pretty
-python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --backend auto --pretty
-python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --expect-snapshot-id <snapshot_id> --pretty
-python -m desktop_control double-click --window-id <hwnd> --x <x> --y <y> --pretty
-python -m desktop_control find-elements --window-id <hwnd> --name-contains "Save" --pretty
-python -m desktop_control wait-window --query "Notepad" --timeout 5 --pretty
-python -m desktop_control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty
-python -m desktop_control recover-window --ref-file .tmp\window-ref.json --pretty
-python -m desktop_control click-element --window-id <hwnd> --name "OK" --control-type button --pretty
-python -m desktop_control set-element-value --window-id <hwnd> --control-type edit --value "text" --pretty
-python -m desktop_control invoke-element --window-id <hwnd> --name "Apply" --control-type button --pretty
-python -m desktop_control type-text --window-id <hwnd> --text "text to type" --pretty
-python -m desktop_control press-key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
-python -m desktop_control key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
-python -m desktop_control batch --file .tmp\batch-actions.json --pretty
-python -m desktop_control serve-stdio
-python -m desktop_control serve-mcp
-python -m desktop_control serve-pipe --name desktop-control
-python -m desktop_control pipe-request --name desktop-control --request-file .tmp\request.json --pretty
+desktop-control list-windows --pretty
+desktop-control list-apps --query notepad --pretty
+desktop-control launch-app --app notepad.exe --wait-query Notepad --pretty
+desktop-control approve-app --process-name notepad.exe --pretty
+desktop-control get-window --window-id <hwnd> --pretty
+desktop-control activate-window --window-id <hwnd> --pretty
+desktop-control get-window-state --window-id <hwnd> --include-text --pretty
+desktop-control state --window-id <hwnd> --include-ui --pretty
+desktop-control screenshot --window-id <hwnd> --out .tmp\window.png --backend auto --pretty
+desktop-control click --window-id <hwnd> --x <x> --y <y> --expect-snapshot-id <snapshot_id> --pretty
+desktop-control double-click --window-id <hwnd> --x <x> --y <y> --pretty
+desktop-control find-elements --window-id <hwnd> --name-contains "Save" --pretty
+desktop-control wait-window --query "Notepad" --timeout 5 --pretty
+desktop-control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty
+desktop-control recover-window --ref-file .tmp\window-ref.json --pretty
+desktop-control click-element --window-id <hwnd> --name "OK" --control-type button --pretty
+desktop-control set-element-value --window-id <hwnd> --control-type edit --value "text" --pretty
+desktop-control invoke-element --window-id <hwnd> --name "Apply" --control-type button --pretty
+desktop-control type-text --window-id <hwnd> --text "text to type" --pretty
+desktop-control press-key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
+desktop-control key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
+desktop-control batch --file .tmp\batch-actions.json --pretty
+desktop-control serve-stdio
+desktop-control serve-pipe --name desktop-control
+desktop-control pipe-request --name desktop-control --request-file .tmp\request.json --pretty
 ```
 
 Each returned window includes `window_ref`. If an action reports a stale or missing window, recover explicitly with `recover-window` or JSON-RPC `recover_window`, refresh state, then retry only when the recovered target is unambiguous.
 
 The stdio and named-pipe servers accept JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
-
-The MCP server accepts `initialize`, `tools/list`, and `tools/call`, and exposes the same desktop-control action set as MCP tools with structured JSON results.
 
 Policy defaults are safe but configurable. Use `DESKTOP_CONTROL_BLOCKED_PROCESSES`, `DESKTOP_CONTROL_BLOCKED_TITLE_TERMS`, `DESKTOP_CONTROL_BLOCKED_CLASS_TERMS`, or `DESKTOP_CONTROL_POLICY_FILE` to add deployment-specific blocked targets without editing source. These settings add to the built-in hard denials; they do not remove terminal, credential, password-manager, security, or agent-host protections.
 

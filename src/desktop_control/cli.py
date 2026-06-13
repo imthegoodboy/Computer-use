@@ -442,12 +442,6 @@ def command_serve_stdio(args: argparse.Namespace) -> int:
     return serve_stdio()
 
 
-def command_serve_mcp(args: argparse.Namespace) -> int:
-    from .mcp import serve_mcp_stdio
-
-    return serve_mcp_stdio()
-
-
 def command_serve_pipe(args: argparse.Namespace) -> int:
     from .pipe_transport import serve_pipe
 
@@ -718,9 +712,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)
-
-    serve_mcp_parser = subparsers.add_parser("serve-mcp", help="Run an MCP tools server over stdio")
-    serve_mcp_parser.set_defaults(func=command_serve_mcp)
 
     serve_pipe_parser = subparsers.add_parser("serve-pipe", help="Run length-prefixed JSON-RPC over a Windows named pipe")
     serve_pipe_parser.add_argument("--name", required=True, help="Simple pipe name or full \\\\.\\pipe\\ path")
