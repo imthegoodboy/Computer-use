@@ -27,11 +27,11 @@ from .windows import (
 )
 
 
-def _json_dump(payload: dict[str, Any], pretty: bool) -> str:
+def _json_dump(payload: Any, pretty: bool) -> str:
     return json.dumps(payload, indent=2 if pretty else None, sort_keys=pretty)
 
 
-def _print(payload: dict[str, Any], pretty: bool) -> None:
+def _print(payload: Any, pretty: bool) -> None:
     print(_json_dump(payload, pretty))
 
 
@@ -102,6 +102,32 @@ def command_launch_app(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
+def command_get_window(args: argparse.Namespace) -> dict[str, Any]:
+    return {"ok": True, "window": get_window(args.window_id).to_dict()}
+
+
+def command_activate_window(args: argparse.Namespace) -> dict[str, Any]:
+    window = _window_for_action(args.window_id, "activate_window", activate=True)
+    return {"ok": True, "action": "activate_window", "window": window.to_dict()}
+
+
+def command_get_window_state(args: argparse.Namespace) -> dict[str, Any]:
+    from .rpc import build_window_state
+
+    params: dict[str, Any] = {
+        "window_id": args.window_id,
+        "include_screenshot": not args.no_screenshot,
+        "include_text": args.include_text or args.include_ui,
+        "max_depth": args.max_depth,
+        "max_nodes": args.max_nodes,
+        "screenshot_backend": args.screenshot_backend,
+        "activate": args.activate,
+    }
+    if args.out:
+        params["out"] = args.out
+    return build_window_state(params, default_screenshot=True)
+
+
 def command_state(args: argparse.Namespace) -> dict[str, Any]:
     window = _window_for_action(args.window_id, "state", activate=args.activate)
     payload: dict[str, Any] = {
@@ -137,6 +163,11 @@ def command_click(args: argparse.Namespace) -> dict[str, Any]:
         "button": args.button,
         "count": args.count,
     }
+
+
+def command_double_click(args: argparse.Namespace) -> dict[str, Any]:
+    args.count = 2
+    return command_click(args)
 
 
 def command_move(args: argparse.Namespace) -> dict[str, Any]:
@@ -411,6 +442,28 @@ def command_serve_stdio(args: argparse.Namespace) -> int:
     return serve_stdio()
 
 
+def command_serve_mcp(args: argparse.Namespace) -> int:
+    from .mcp import serve_mcp_stdio
+
+    return serve_mcp_stdio()
+
+
+def command_serve_pipe(args: argparse.Namespace) -> int:
+    from .pipe_transport import serve_pipe
+
+    return serve_pipe(args.name)
+
+
+def command_pipe_request(args: argparse.Namespace) -> dict[str, Any] | list[Any]:
+    from .pipe_transport import pipe_request
+
+    if args.request_file:
+        payload = json.loads(Path(args.request_file).read_text(encoding="utf-8-sig"))
+    else:
+        payload = json.loads(sys.stdin.read())
+    return pipe_request(args.name, payload, timeout_seconds=args.timeout)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="desktop-control")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -442,6 +495,33 @@ def build_parser() -> argparse.ArgumentParser:
     launch_parser.add_argument("--pretty", action="store_true")
     launch_parser.set_defaults(func=command_launch_app)
 
+    get_window_parser = subparsers.add_parser("get-window", help="Get a current window object by id")
+    get_window_parser.add_argument("--window-id", "--id", dest="window_id", type=int, required=True)
+    get_window_parser.add_argument("--pretty", action="store_true")
+    get_window_parser.set_defaults(func=command_get_window)
+
+    activate_parser = subparsers.add_parser("activate-window", help="Activate and restore a target window")
+    activate_parser.add_argument("--window-id", "--id", dest="window_id", type=int, required=True)
+    activate_parser.add_argument("--pretty", action="store_true")
+    activate_parser.set_defaults(func=command_activate_window)
+
+    get_state_parser = subparsers.add_parser(
+        "get-window-state",
+        aliases=["get-state"],
+        help="Get Codex-style window state with screenshot by default",
+    )
+    get_state_parser.add_argument("--window-id", "--id", dest="window_id", type=int, required=True)
+    get_state_parser.add_argument("--out", help="Screenshot output path; defaults under DESKTOP_CONTROL_CAPTURE_DIR")
+    get_state_parser.add_argument("--no-screenshot", action="store_true")
+    get_state_parser.add_argument("--include-text", action="store_true")
+    get_state_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    get_state_parser.add_argument("--max-depth", type=int, default=3)
+    get_state_parser.add_argument("--max-nodes", type=int, default=200)
+    get_state_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
+    get_state_parser.add_argument("--activate", action="store_true")
+    get_state_parser.add_argument("--pretty", action="store_true")
+    get_state_parser.set_defaults(func=command_get_window_state)
+
     state_parser = subparsers.add_parser("state", help="Get window state")
     state_parser.add_argument("--window-id", type=int, required=True)
     state_parser.add_argument("--include-ui", action="store_true")
@@ -472,6 +552,17 @@ def build_parser() -> argparse.ArgumentParser:
     click_parser.add_argument("--expect-snapshot-id")
     click_parser.add_argument("--pretty", action="store_true")
     click_parser.set_defaults(func=command_click)
+
+    double_click_parser = subparsers.add_parser("double-click", help="Double-click a window-relative point")
+    double_click_parser.add_argument("--window-id", type=int, required=True)
+    double_click_parser.add_argument("--x", type=int, required=True)
+    double_click_parser.add_argument("--y", type=int, required=True)
+    double_click_parser.add_argument("--space", type=_space, default="window")
+    double_click_parser.add_argument("--button", choices=["left", "right", "middle"], default="left")
+    double_click_parser.add_argument("--no-activate", action="store_true")
+    double_click_parser.add_argument("--expect-snapshot-id")
+    double_click_parser.add_argument("--pretty", action="store_true")
+    double_click_parser.set_defaults(func=command_double_click)
 
     move_parser = subparsers.add_parser("move", help="Move the cursor to a window-relative point")
     move_parser.add_argument("--window-id", type=int, required=True)
@@ -509,7 +600,7 @@ def build_parser() -> argparse.ArgumentParser:
     drag_parser.add_argument("--pretty", action="store_true")
     drag_parser.set_defaults(func=command_drag)
 
-    type_parser = subparsers.add_parser("type-text", help="Type text into a window")
+    type_parser = subparsers.add_parser("type-text", aliases=["type"], help="Type text into a window")
     type_parser.add_argument("--window-id", type=int, required=True)
     type_parser.add_argument("--text", default="")
     type_parser.add_argument("--text-file")
@@ -519,7 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
     type_parser.add_argument("--pretty", action="store_true")
     type_parser.set_defaults(func=command_type_text)
 
-    key_parser = subparsers.add_parser("key", help="Press key chords")
+    key_parser = subparsers.add_parser("key", aliases=["press-key", "keypress"], help="Press key chords")
     key_parser.add_argument("--window-id", type=int, required=True)
     key_parser.add_argument("--keys", action="append", required=True, help="Example: ctrl+a, enter, alt+f4")
     key_parser.add_argument("--no-activate", action="store_true")
@@ -552,13 +643,21 @@ def build_parser() -> argparse.ArgumentParser:
     click_element_parser.add_argument("--expect-snapshot-id")
     click_element_parser.set_defaults(func=command_click_element)
 
-    invoke_element_parser = subparsers.add_parser("invoke-element", help="Invoke a UI Automation element")
+    invoke_element_parser = subparsers.add_parser(
+        "invoke-element",
+        aliases=["perform-secondary-action"],
+        help="Invoke a UI Automation element",
+    )
     add_uia_selector_args(invoke_element_parser)
     invoke_element_parser.add_argument("--no-activate", action="store_true")
     invoke_element_parser.add_argument("--expect-snapshot-id")
     invoke_element_parser.set_defaults(func=command_invoke_element)
 
-    set_element_parser = subparsers.add_parser("set-element-value", help="Set a UI Automation element value")
+    set_element_parser = subparsers.add_parser(
+        "set-element-value",
+        aliases=["set-value"],
+        help="Set a UI Automation element value",
+    )
     add_uia_selector_args(set_element_parser)
     set_element_parser.add_argument("--value", default="")
     set_element_parser.add_argument("--value-file")
@@ -619,6 +718,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)
+
+    serve_mcp_parser = subparsers.add_parser("serve-mcp", help="Run an MCP tools server over stdio")
+    serve_mcp_parser.set_defaults(func=command_serve_mcp)
+
+    serve_pipe_parser = subparsers.add_parser("serve-pipe", help="Run length-prefixed JSON-RPC over a Windows named pipe")
+    serve_pipe_parser.add_argument("--name", required=True, help="Simple pipe name or full \\\\.\\pipe\\ path")
+    serve_pipe_parser.set_defaults(func=command_serve_pipe)
+
+    pipe_request_parser = subparsers.add_parser("pipe-request", help="Send one framed JSON-RPC request to serve-pipe")
+    pipe_request_parser.add_argument("--name", required=True, help="Simple pipe name or full \\\\.\\pipe\\ path")
+    pipe_request_parser.add_argument("--request-file")
+    pipe_request_parser.add_argument("--timeout", type=float, default=10.0)
+    pipe_request_parser.add_argument("--pretty", action="store_true")
+    pipe_request_parser.set_defaults(func=command_pipe_request)
 
     return parser
 

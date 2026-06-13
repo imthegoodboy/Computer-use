@@ -11,9 +11,13 @@ from .models import WindowInfo
 APPROVALS_FILE_ENV = "DESKTOP_CONTROL_APPROVALS_FILE"
 APPROVED_APPS_ENV = "DESKTOP_CONTROL_APPROVED_APPS"
 REQUIRE_APPROVALS_ENV = "DESKTOP_CONTROL_REQUIRE_APPROVALS"
+POLICY_FILE_ENV = "DESKTOP_CONTROL_POLICY_FILE"
+BLOCKED_PROCESSES_ENV = "DESKTOP_CONTROL_BLOCKED_PROCESSES"
+BLOCKED_TITLE_TERMS_ENV = "DESKTOP_CONTROL_BLOCKED_TITLE_TERMS"
+BLOCKED_CLASS_TERMS_ENV = "DESKTOP_CONTROL_BLOCKED_CLASS_TERMS"
 DEFAULT_APPROVALS_FILE = ".tmp/desktop-control-approvals.json"
 
-BLOCKED_PROCESS_NAMES = {
+DEFAULT_BLOCKED_PROCESS_NAMES = {
     "cmd.exe",
     "codex.exe",
     "credentialuibroker.exe",
@@ -26,7 +30,7 @@ BLOCKED_PROCESS_NAMES = {
     "wt.exe",
 }
 
-BLOCKED_TITLE_TERMS = {
+DEFAULT_BLOCKED_TITLE_TERMS = {
     "1password",
     "administrator:",
     "bitwarden",
@@ -43,7 +47,7 @@ BLOCKED_TITLE_TERMS = {
     "windows security",
 }
 
-BLOCKED_CLASS_TERMS = {
+DEFAULT_BLOCKED_CLASS_TERMS = {
     "credential",
 }
 
@@ -55,6 +59,65 @@ def _truthy_env(name: str) -> bool:
 def _split_env_list(name: str) -> set[str]:
     raw = os.environ.get(name, "")
     return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def _list_config_values(data: dict[str, Any], key: str) -> set[str]:
+    values = data.get(key, [])
+    if not isinstance(values, list):
+        raise DesktopControlError(
+            "policy_config_invalid",
+            f"Policy config field {key} must be a list",
+            {"field": key},
+        )
+    return {str(item).strip().lower() for item in values if str(item).strip()}
+
+
+def load_policy_config(explicit_path: str | None = None) -> dict[str, set[str]]:
+    path_value = explicit_path or os.environ.get(POLICY_FILE_ENV)
+    if not path_value:
+        return {"blocked_process_names": set(), "blocked_title_terms": set(), "blocked_class_terms": set()}
+    path = Path(path_value)
+    if not path.exists():
+        raise DesktopControlError("policy_config_missing", "Policy config file does not exist", {"path": str(path)})
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DesktopControlError(
+            "policy_config_invalid",
+            "Could not read desktop-control policy config",
+            {"path": str(path), "exception": repr(exc)},
+        ) from exc
+    if not isinstance(data, dict):
+        raise DesktopControlError("policy_config_invalid", "Policy config must be a JSON object", {"path": str(path)})
+    return {
+        "blocked_process_names": _list_config_values(data, "blocked_process_names"),
+        "blocked_title_terms": _list_config_values(data, "blocked_title_terms"),
+        "blocked_class_terms": _list_config_values(data, "blocked_class_terms"),
+    }
+
+
+def _effective_blocked_process_names() -> set[str]:
+    return (
+        set(DEFAULT_BLOCKED_PROCESS_NAMES)
+        | _split_env_list(BLOCKED_PROCESSES_ENV)
+        | load_policy_config()["blocked_process_names"]
+    )
+
+
+def _effective_blocked_title_terms() -> set[str]:
+    return (
+        set(DEFAULT_BLOCKED_TITLE_TERMS)
+        | _split_env_list(BLOCKED_TITLE_TERMS_ENV)
+        | load_policy_config()["blocked_title_terms"]
+    )
+
+
+def _effective_blocked_class_terms() -> set[str]:
+    return (
+        set(DEFAULT_BLOCKED_CLASS_TERMS)
+        | _split_env_list(BLOCKED_CLASS_TERMS_ENV)
+        | load_policy_config()["blocked_class_terms"]
+    )
 
 
 def approval_file_path(explicit_path: str | None = None, for_write: bool = False) -> Path | None:
@@ -143,7 +206,7 @@ def _is_blocked_process_name(process_name: str) -> bool:
     candidates = {process_name}
     if "." not in process_name:
         candidates.add(f"{process_name}.exe")
-    return bool(candidates & BLOCKED_PROCESS_NAMES)
+    return bool(candidates & _effective_blocked_process_names())
 
 
 def assert_not_blocked_process_name(process_name_or_path: str, action: str) -> None:
@@ -167,7 +230,7 @@ def assert_allowed_app_launch(
             assert_not_blocked_process_name(candidate, "launch_app")
 
     app_lc = app.lower()
-    matched_title = next((term for term in BLOCKED_TITLE_TERMS if term in app_lc), None)
+    matched_title = next((term for term in _effective_blocked_title_terms() if term in app_lc), None)
     if matched_title:
         raise DesktopControlError(
             "policy_denied",
@@ -212,14 +275,14 @@ def assert_not_blocked_target(window: WindowInfo, action: str) -> None:
     title = window.title.lower()
     class_name = window.class_name.lower()
 
-    if process_name in BLOCKED_PROCESS_NAMES:
+    if process_name in _effective_blocked_process_names():
         raise DesktopControlError(
             "policy_denied",
             f"Refusing to automate blocked process for action {action}",
             {"process_name": window.process_name, "hwnd": window.hwnd, "title": window.title},
         )
 
-    matched_title = next((term for term in BLOCKED_TITLE_TERMS if term in title), None)
+    matched_title = next((term for term in _effective_blocked_title_terms() if term in title), None)
     if matched_title:
         raise DesktopControlError(
             "policy_denied",
@@ -227,7 +290,7 @@ def assert_not_blocked_target(window: WindowInfo, action: str) -> None:
             {"matched_term": matched_title, "hwnd": window.hwnd, "title": window.title},
         )
 
-    matched_class = next((term for term in BLOCKED_CLASS_TERMS if term in class_name), None)
+    matched_class = next((term for term in _effective_blocked_class_terms() if term in class_name), None)
     if matched_class:
         raise DesktopControlError(
             "policy_denied",

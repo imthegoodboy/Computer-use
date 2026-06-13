@@ -23,6 +23,8 @@ This project is an independent implementation. It does not decompile or depend o
 - Block terminal, credential, password-manager, security, and agent-host targets by default.
 - Optionally require explicit app/window approvals before control actions.
 - Keep a warm JSON-RPC stdio process for agent integrations.
+- Expose the same actions as a Model Context Protocol (MCP) tools server over stdio.
+- Keep a warm length-prefixed JSON-RPC named-pipe process for Windows agent integrations.
 - Write structured JSONL audit logs when `DESKTOP_CONTROL_AUDIT_LOG` is set.
 
 ## Quick Start
@@ -33,24 +35,30 @@ Run commands from the repository root:
 $env:PYTHONPATH = "src"
 python -m desktop_control list-windows --pretty
 python -m desktop_control list-apps --query notepad --pretty
+python -m desktop_control get-window --window-id 123456 --pretty
+python -m desktop_control get-window-state --window-id 123456 --pretty
 ```
 
 Find a safe window such as Notepad, then use its `hwnd`:
 
 ```powershell
 python -m desktop_control state --window-id 123456 --include-ui --pretty
+python -m desktop_control get-window-state --window-id 123456 --include-text --pretty
 python -m desktop_control screenshot --window-id 123456 --out .tmp\notepad.png --backend auto --pretty
 python -m desktop_control click --window-id 123456 --x 120 --y 90 --expect-snapshot-id <snapshot_id> --pretty
+python -m desktop_control double-click --window-id 123456 --x 120 --y 90 --pretty
 python -m desktop_control find-elements --window-id 123456 --name-contains "Save" --pretty
 python -m desktop_control wait-element --window-id 123456 --name "OK" --control-type button --timeout 5 --pretty
 python -m desktop_control recover-window --ref-file .tmp\window-ref.json --pretty
 python -m desktop_control click-element --window-id 123456 --name "OK" --control-type button --pretty
 python -m desktop_control type-text --window-id 123456 --text "hello from desktop-control" --pretty
+python -m desktop_control press-key --window-id 123456 --keys ctrl+a --keys backspace --pretty
 python -m desktop_control key --window-id 123456 --keys ctrl+a --keys backspace --pretty
 python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
 ```
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
+`get-window-state` captures a screenshot by default for agent visual grounding; set `DESKTOP_CONTROL_CAPTURE_DIR` or pass `--out` to choose where screenshots are written.
 
 ## App Approvals
 
@@ -71,6 +79,27 @@ python -m desktop_control list-approvals --pretty
 
 `DESKTOP_CONTROL_APPROVED_APPS` can hold a comma-separated process allowlist for short-lived sessions, for example `notepad.exe,calc.exe`. Blocked sensitive targets remain blocked even when listed.
 
+Deployments can extend the safety policy without changing source code:
+
+```powershell
+$env:DESKTOP_CONTROL_BLOCKED_PROCESSES = "internal-admin.exe,vault.exe"
+$env:DESKTOP_CONTROL_BLOCKED_TITLE_TERMS = "tenant secret,production admin"
+$env:DESKTOP_CONTROL_BLOCKED_CLASS_TERMS = "credential"
+$env:DESKTOP_CONTROL_POLICY_FILE = ".tmp\desktop-control-policy.json"
+```
+
+The optional policy file is JSON:
+
+```json
+{
+  "blocked_process_names": ["internal-admin.exe"],
+  "blocked_title_terms": ["Tenant Secret"],
+  "blocked_class_terms": ["Credential"]
+}
+```
+
+These settings add to the built-in hard denials; they do not remove protections for terminals, credential prompts, password managers, security tools, or agent-host apps.
+
 ## Agent JSON-RPC Mode
 
 For lower overhead, keep one process alive:
@@ -86,7 +115,27 @@ Send one JSON-RPC request per line:
 {"jsonrpc":"2.0","id":1,"method":"list_windows","params":{"query":"notepad"}}
 ```
 
-Supported methods are `list_apps`, `launch_app`, `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+Supported methods are `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+
+## MCP Mode
+
+For MCP-capable agents, run a stdio MCP tools server:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m desktop_control serve-mcp
+```
+
+The MCP server supports `initialize`, `tools/list`, and `tools/call`. It exposes the same desktop-control actions as tools, including `list_apps`, `list_windows`, `get_window_state`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `press_key`, UI Automation element tools, wait/recovery tools, and `batch`. Tool call results include both text content and `structuredContent` JSON so agents can reason over window ids, screenshot ids, generation ids, policy denials, and recovery details.
+
+Tool execution errors such as stale snapshots, approval requirements, blocked targets, or missing windows are returned as MCP tool results with `isError: true`, not as transport failures. Unknown MCP tools and malformed MCP requests still return JSON-RPC protocol errors.
+
+For a local Windows helper process closer to Codex Computer Use's native transport, use length-prefixed JSON-RPC over a named pipe:
+
+```powershell
+python -m desktop_control serve-pipe --name desktop-control
+python -m desktop_control pipe-request --name desktop-control --request-file .tmp\request.json --pretty
+```
 
 ## App Discovery And Launch
 
@@ -129,7 +178,7 @@ Run it:
 python -m desktop_control batch --file .tmp\batch-actions.json --pretty
 ```
 
-The JSON-RPC method name is `batch` with the same payload shape. Nested batches are rejected.
+The JSON-RPC method name is `batch` with the same payload shape. Nested batches are rejected. For flexible integrations, most methods accept either `window_id` or a Codex-style `window` object containing `id`/`hwnd` and `app`.
 
 ## Audit Logs
 
@@ -210,6 +259,18 @@ For app launch:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_launch.ps1
+```
+
+For named-pipe transport:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_pipe.ps1
+```
+
+For MCP stdio transport:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_mcp.ps1
 ```
 
 For stale-window recovery:

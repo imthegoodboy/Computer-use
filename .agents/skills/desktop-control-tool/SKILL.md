@@ -58,9 +58,13 @@ python -m desktop_control list-windows --pretty
 python -m desktop_control list-apps --query notepad --pretty
 python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pretty
 python -m desktop_control approve-app --process-name notepad.exe --pretty
+python -m desktop_control get-window --window-id <hwnd> --pretty
+python -m desktop_control activate-window --window-id <hwnd> --pretty
+python -m desktop_control get-window-state --window-id <hwnd> --include-text --pretty
 python -m desktop_control state --window-id <hwnd> --include-ui --pretty
 python -m desktop_control screenshot --window-id <hwnd> --out .tmp\window.png --backend auto --pretty
 python -m desktop_control click --window-id <hwnd> --x <x> --y <y> --expect-snapshot-id <snapshot_id> --pretty
+python -m desktop_control double-click --window-id <hwnd> --x <x> --y <y> --pretty
 python -m desktop_control find-elements --window-id <hwnd> --name-contains "Save" --pretty
 python -m desktop_control wait-window --query "Notepad" --timeout 5 --pretty
 python -m desktop_control wait-element --window-id <hwnd> --name "OK" --control-type button --timeout 5 --pretty
@@ -69,14 +73,22 @@ python -m desktop_control click-element --window-id <hwnd> --name "OK" --control
 python -m desktop_control set-element-value --window-id <hwnd> --control-type edit --value "text" --pretty
 python -m desktop_control invoke-element --window-id <hwnd> --name "Apply" --control-type button --pretty
 python -m desktop_control type-text --window-id <hwnd> --text "text to type" --pretty
+python -m desktop_control press-key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
 python -m desktop_control key --window-id <hwnd> --keys ctrl+a --keys backspace --pretty
 python -m desktop_control batch --file .tmp\batch-actions.json --pretty
 python -m desktop_control serve-stdio
+python -m desktop_control serve-mcp
+python -m desktop_control serve-pipe --name desktop-control
+python -m desktop_control pipe-request --name desktop-control --request-file .tmp\request.json --pretty
 ```
 
 Each returned window includes `window_ref`. If an action reports a stale or missing window, recover explicitly with `recover-window` or JSON-RPC `recover_window`, refresh state, then retry only when the recovered target is unambiguous.
 
-The stdio server accepts JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `state`, `screenshot`, `click`, `move`, `scroll`, `drag`, `type_text`, `key`, `find_elements`, `click_element`, `invoke_element`, `set_element_value`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+The stdio and named-pipe servers accept JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
+
+The MCP server accepts `initialize`, `tools/list`, and `tools/call`, and exposes the same desktop-control action set as MCP tools with structured JSON results.
+
+Policy defaults are safe but configurable. Use `DESKTOP_CONTROL_BLOCKED_PROCESSES`, `DESKTOP_CONTROL_BLOCKED_TITLE_TERMS`, `DESKTOP_CONTROL_BLOCKED_CLASS_TERMS`, or `DESKTOP_CONTROL_POLICY_FILE` to add deployment-specific blocked targets without editing source. These settings add to the built-in hard denials; they do not remove terminal, credential, password-manager, security, or agent-host protections.
 
 ## Performance Rules
 

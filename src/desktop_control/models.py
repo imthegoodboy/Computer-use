@@ -49,7 +49,9 @@ class WindowInfo:
 
     def window_ref(self) -> dict[str, Any]:
         return {
+            "id": self.hwnd,
             "hwnd": self.hwnd,
+            "app": self.process_name,
             "process_id": self.process_id,
             "process_name": self.process_name,
             "title": self.title,
@@ -59,6 +61,8 @@ class WindowInfo:
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
+            "id": self.hwnd,
+            "app": self.process_name,
             "hwnd": self.hwnd,
             "title": self.title,
             "process_id": self.process_id,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +12,16 @@ from .errors import DesktopControlError
 from .windows import get_window
 
 CaptureBackend = Literal["auto", "pil", "mss"]
+CAPTURE_DIR_ENV = "DESKTOP_CONTROL_CAPTURE_DIR"
+DEFAULT_CAPTURE_DIR = ".tmp/desktop-control-captures"
+
+
+def default_capture_path(hwnd: int, suffix: str = ".png") -> Path:
+    normalized_suffix = suffix if suffix.startswith(".") else f".{suffix}"
+    root = Path(os.environ.get(CAPTURE_DIR_ENV, DEFAULT_CAPTURE_DIR))
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    nonce = f"{time.time_ns() % 1_000_000_000:09d}"
+    return root / f"window-{int(hwnd)}-{timestamp}-{nonce}{normalized_suffix}"
 
 
 def _capture_pil(bbox: tuple[int, int, int, int]) -> Image.Image:
