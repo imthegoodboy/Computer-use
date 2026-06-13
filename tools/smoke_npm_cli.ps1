@@ -41,6 +41,15 @@ try {
         throw "observe help did not include --query"
     }
 
+    $agentStepHelp = node .\npm\bin\desktop-control.js agent-step --help
+    if ($LASTEXITCODE -ne 0) {
+        throw "desktop-control agent-step --help exited with $LASTEXITCODE"
+    }
+    $agentStepHelpText = $agentStepHelp -join [Environment]::NewLine
+    if ($agentStepHelpText -notmatch "agent-step" -or $agentStepHelpText -notmatch "--file") {
+        throw "agent-step help did not expose the expected command/options"
+    }
+
     "npm CLI smoke passed"
 }
 finally {

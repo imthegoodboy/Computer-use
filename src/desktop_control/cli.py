@@ -479,6 +479,44 @@ def command_batch(args: argparse.Namespace) -> dict[str, Any]:
     return execute_batch_actions(actions, stop_on_error=stop_on_error)
 
 
+def _load_json_payload(file_path: str | None) -> Any:
+    if file_path:
+        return json.loads(Path(file_path).read_text(encoding="utf-8-sig"))
+    return json.loads(sys.stdin.read())
+
+
+def command_agent_step(args: argparse.Namespace) -> dict[str, Any]:
+    from .rpc import execute_agent_step
+
+    payload = _load_json_payload(args.file)
+    if isinstance(payload, list):
+        params: dict[str, Any] = {"actions": payload}
+    elif isinstance(payload, dict):
+        params = dict(payload)
+    else:
+        raise DesktopControlError("invalid_request", "agent-step payload must be a JSON object or array")
+
+    if args.window_id is not None:
+        params.setdefault("window_id", args.window_id)
+    if args.query:
+        params.setdefault("query", args.query)
+    if args.ref_file:
+        ref_payload = json.loads(Path(args.ref_file).read_text(encoding="utf-8-sig"))
+        params.setdefault("window_ref", _extract_window_ref_payload(ref_payload))
+    if args.expect_snapshot_id:
+        params.setdefault("expect_snapshot_id", args.expect_snapshot_id)
+    if args.space:
+        params.setdefault("space", args.space)
+    if args.continue_on_error:
+        params["continue_on_error"] = True
+    if args.observe_after:
+        observe_after: dict[str, Any] = {}
+        if args.include_text_after:
+            observe_after["include_text"] = True
+        params["observe_after"] = observe_after or True
+    return execute_agent_step(params)
+
+
 def command_serve_stdio(args: argparse.Namespace) -> int:
     from .rpc import serve_stdio
 
@@ -778,6 +816,23 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--continue-on-error", action="store_true")
     batch_parser.add_argument("--pretty", action="store_true")
     batch_parser.set_defaults(func=command_batch)
+
+    agent_step_parser = subparsers.add_parser(
+        "agent-step",
+        aliases=["act", "perform-actions"],
+        help="Run OpenAI/Codex-style computer-use action JSON against a target window",
+    )
+    agent_step_parser.add_argument("--file", help="JSON object/array of computer-use actions; stdin when omitted")
+    agent_step_parser.add_argument("--window-id", "--id", dest="window_id", type=int)
+    agent_step_parser.add_argument("--query", help="Resolve the target window by title or process name")
+    agent_step_parser.add_argument("--ref-file", help="JSON file containing a window_ref, window, or full observe result")
+    agent_step_parser.add_argument("--expect-snapshot-id")
+    agent_step_parser.add_argument("--space", choices=["window", "client", "screen"])
+    agent_step_parser.add_argument("--continue-on-error", action="store_true")
+    agent_step_parser.add_argument("--observe-after", action="store_true")
+    agent_step_parser.add_argument("--include-text-after", action="store_true")
+    agent_step_parser.add_argument("--pretty", action="store_true")
+    agent_step_parser.set_defaults(func=command_agent_step)
 
     serve_parser = subparsers.add_parser("serve-stdio", help="Run JSON-RPC over stdin/stdout")
     serve_parser.set_defaults(func=command_serve_stdio)
