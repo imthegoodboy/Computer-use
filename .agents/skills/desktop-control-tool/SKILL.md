@@ -98,6 +98,8 @@ Use `--inline-screenshot`, `include_image_data: true`, or `DESKTOP_CONTROL_INLIN
 
 For default agent action execution, use `agent-run`/`agent_run`. It observes the target window, injects the observed window context into OpenAI/Codex-style action JSON, executes the actions immediately, then returns a fresh visual observation and trace timings. Set `strict_snapshot: true` when geometry-level stale-coordinate rejection is required. Use `agent-step`/`agent_step` when the caller already has a fresh observation and wants only action execution. The payload can include `actions`, a single `action`, or a single `type`/`method`, plus the observed `window`; snapshot guards are inherited from the observed window.
 
+For JavaScript agents, prefer `const { createClient } = require("desktop-control-tool")` and reuse one client across the task. The SDK keeps `serve-stdio` warm and exposes `request(method, params)` plus convenience methods such as `observe`, `agentRun`, `agentStep`, `click`, `typeText`, `key`, `waitWindow`, and `recoverWindow`.
+
 Policy defaults are safe but configurable. Use `DESKTOP_CONTROL_BLOCKED_PROCESSES`, `DESKTOP_CONTROL_BLOCKED_TITLE_TERMS`, `DESKTOP_CONTROL_BLOCKED_CLASS_TERMS`, or `DESKTOP_CONTROL_POLICY_FILE` to add deployment-specific blocked targets without editing source. These settings add to the built-in hard denials; they do not remove terminal, credential, password-manager, security, or agent-host protections.
 
 ## Performance Rules

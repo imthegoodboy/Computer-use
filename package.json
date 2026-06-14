@@ -20,6 +20,11 @@
   },
   "license": "UNLICENSED",
   "type": "commonjs",
+  "main": "./npm/lib/client.js",
+  "exports": {
+    ".": "./npm/lib/client.js",
+    "./bin": "./npm/bin/desktop-control.js"
+  },
   "os": [
     "win32"
   ],
@@ -34,12 +39,14 @@
     "npm",
     "tools/smoke_agent_run.ps1",
     "tools/smoke_agent_step.ps1",
+    "tools/smoke_node_client.ps1",
     "tools/smoke_observe.ps1",
     "tools/smoke_npm_cli.ps1"
   ],
   "scripts": {
     "test": "node --test npm/test/*.test.js",
     "smoke:npm": "powershell -ExecutionPolicy Bypass -File tools/smoke_npm_cli.ps1",
+    "smoke:node-client": "powershell -ExecutionPolicy Bypass -File tools/smoke_node_client.ps1",
     "doctor": "node npm/bin/desktop-control.js --npm-wrapper-doctor"
   },
   "engines": {

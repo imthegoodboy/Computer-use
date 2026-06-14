@@ -138,6 +138,34 @@ desktop-control observe --query notepad --pretty
 desktop-control-tool get-window-state --window-id 123456 --pretty
 ```
 
+For agent integrations, prefer the package SDK so one warm `serve-stdio` process handles many requests:
+
+```js
+const { createClient } = require("desktop-control-tool");
+
+async function main() {
+  const client = createClient({ timeoutMs: 30000 });
+  try {
+    const state = await client.observe({ query: "notepad", include_image_data: true });
+    const result = await client.agentRun({
+      window: state.window,
+      space: "client",
+      actions: [{ type: "click", x: 120, y: 90 }]
+    });
+    console.log(result.current_observation);
+  } finally {
+    client.close();
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+The SDK exposes `request(method, params)` plus convenience methods such as `listApps`, `listWindows`, `observe`, `agentRun`, `agentStep`, `click`, `typeText`, `key`, `waitWindow`, and `recoverWindow`.
+
 For local development without global install:
 
 ```powershell
@@ -361,6 +389,12 @@ For the full agent observe/action/observe loop:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\smoke_agent_run.ps1
+```
+
+For the warm Node SDK:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_node_client.ps1
 ```
 
 For app launch:
