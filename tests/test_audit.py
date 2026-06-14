@@ -11,7 +11,7 @@ def test_audit_log_redacts_sensitive_fields(monkeypatch, tmp_path):
         "test",
         "type_text",
         {"text": "hello", "window_id": 123, "args": ["--token", "abc"]},
-        result={"ok": True, "value": "secret-value"},
+        result={"ok": True, "value": "secret-value", "url": "data:image/png;base64,abcd"},
     )
 
     event = json.loads(log_path.read_text(encoding="utf-8"))
@@ -22,6 +22,7 @@ def test_audit_log_redacts_sensitive_fields(monkeypatch, tmp_path):
     assert event["params"]["args"] == {"redacted": True, "length": 18}
     assert event["params"]["window_id"] == 123
     assert event["result"]["value"] == {"redacted": True, "length": 12}
+    assert event["result"]["url"] == {"redacted": True, "length": 26}
 
 
 def test_audit_log_is_disabled_without_env(monkeypatch, tmp_path):

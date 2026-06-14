@@ -37,8 +37,9 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "desktop-control observe --help exited with $LASTEXITCODE"
     }
-    if (($observeHelp -join [Environment]::NewLine) -notmatch "--query") {
-        throw "observe help did not include --query"
+    $observeHelpText = $observeHelp -join [Environment]::NewLine
+    if ($observeHelpText -notmatch "--query" -or $observeHelpText -notmatch "--inline-screenshot") {
+        throw "observe help did not include expected visual options"
     }
 
     $agentStepHelp = node .\npm\bin\desktop-control.js agent-step --help
@@ -55,7 +56,7 @@ try {
         throw "desktop-control agent-run --help exited with $LASTEXITCODE"
     }
     $agentRunHelpText = $agentRunHelp -join [Environment]::NewLine
-    if ($agentRunHelpText -notmatch "agent-run" -or $agentRunHelpText -notmatch "--no-observe-after") {
+    if ($agentRunHelpText -notmatch "agent-run" -or $agentRunHelpText -notmatch "--no-observe-after" -or $agentRunHelpText -notmatch "--inline-screenshot") {
         throw "agent-run help did not expose the expected command/options"
     }
 

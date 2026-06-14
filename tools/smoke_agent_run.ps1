@@ -35,6 +35,7 @@ try {
     $request = [PSCustomObject]@{
         query = $title
         space = "client"
+        include_image_data = $true
         observe = [PSCustomObject]@{
             out = $beforePath
         }
@@ -59,6 +60,12 @@ try {
     if ($run.step.batch.results[0].ok -ne $true) { throw "agent-run batch action failed" }
     if (-not $run.observation.screenshots[0].path) { throw "agent-run missing initial screenshot" }
     if (-not $run.next_observation.screenshots[0].path) { throw "agent-run missing next screenshot" }
+    if (-not ([string]$run.observation.screenshots[0].url).StartsWith("data:image/png;base64,")) {
+        throw "agent-run missing initial inline screenshot"
+    }
+    if (-not ([string]$run.next_observation.screenshots[0].url).StartsWith("data:image/png;base64,")) {
+        throw "agent-run missing next inline screenshot"
+    }
     if ($run.current_observation.generation -ne $run.next_observation.generation) {
         throw "agent-run current observation was not updated"
     }

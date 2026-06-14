@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -18,6 +19,8 @@ from .snapshot import assert_expected_snapshot
 from .uia import click_uia_element, find_uia_elements, get_uia_tree, invoke_uia_element, set_uia_element_value
 from .wait import wait_for_element, wait_for_window
 from .windows import get_foreground_window, get_window, list_windows, resolve_window_ref
+
+INLINE_SCREENSHOTS_ENV = "DESKTOP_CONTROL_INLINE_SCREENSHOTS"
 
 
 def _rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -107,11 +110,19 @@ def _include_screenshot(params: dict[str, Any], default: bool) -> bool:
     return default
 
 
+def _include_image_data(params: dict[str, Any]) -> bool:
+    for key in ("include_image_data", "inline_screenshot", "inline_screenshots"):
+        if key in params:
+            return bool(params[key])
+    return os.environ.get(INLINE_SCREENSHOTS_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _screenshot_payload(hwnd: int, params: dict[str, Any]) -> dict[str, Any]:
     screenshot = capture_window(
         hwnd,
         _capture_output_path(hwnd, params),
         backend=params.get("screenshot_backend", params.get("backend", "auto")),
+        include_image_data=_include_image_data(params),
     )
     image = screenshot.get("image")
     digest = image.get("sha256", "") if isinstance(image, dict) else ""
@@ -546,6 +557,9 @@ def _agent_run_observe_params(params: dict[str, Any]) -> dict[str, Any] | None:
         "out",
         "activate",
         "settle_ms",
+        "include_image_data",
+        "inline_screenshot",
+        "inline_screenshots",
     ):
         if key in params and key not in observe_params:
             observe_params[key] = params[key]
@@ -589,6 +603,9 @@ def _agent_run_observe_after_params(
         observe_params["window"] = window
     if params.get("include_text_after") is not None:
         observe_params["include_text"] = bool(params["include_text_after"])
+    for key in ("include_image_data", "inline_screenshot", "inline_screenshots"):
+        if key in params and key not in observe_params:
+            observe_params[key] = params[key]
     return observe_params
 
 
@@ -753,6 +770,7 @@ def _handle_method(method: str, params: dict[str, Any]) -> dict[str, Any]:
                 hwnd,
                 str(params["screenshot"]),
                 backend=params.get("screenshot_backend", "auto"),
+                include_image_data=_include_image_data(params),
             )
         if params.get("include_ui", False):
             result["ui"] = get_uia_tree(

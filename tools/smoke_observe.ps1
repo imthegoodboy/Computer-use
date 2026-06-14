@@ -30,7 +30,7 @@ try {
     $windowResult = (& node .\npm\bin\desktop-control.js wait-window --query $title --timeout 10 --interval 0.1) | ConvertFrom-Json
     if ($windowResult.ok -ne $true) { throw "wait-window failed" }
 
-    $observed = (& node .\npm\bin\desktop-control.js observe --query $title --out $screenshotPath --pretty) | ConvertFrom-Json
+    $observed = (& node .\npm\bin\desktop-control.js observe --query $title --out $screenshotPath --inline-screenshot --pretty) | ConvertFrom-Json
     if ($observed.ok -ne $true) { throw "observe failed" }
     if ($observed.action -ne "observe") { throw "observe action mismatch" }
     if ($observed.selection.source -ne "query") { throw "observe selection source mismatch" }
@@ -46,6 +46,10 @@ try {
     if ($image.nonblank -ne $true) { throw "observe screenshot was blank" }
     if ($image.unique_sample_colors -lt 2) { throw "observe screenshot had too few colors" }
     if ([string]::IsNullOrWhiteSpace($image.sha256)) { throw "observe screenshot missing sha256" }
+    if ($screenshots[0].mime_type -ne "image/png") { throw "observe screenshot missing image/png MIME type" }
+    if (-not ([string]$screenshots[0].url).StartsWith("data:image/png;base64,")) {
+        throw "observe screenshot missing inline data URL"
+    }
 
     [PSCustomObject]@{
         ok = $true

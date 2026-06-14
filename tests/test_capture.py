@@ -43,3 +43,30 @@ def test_default_capture_path_uses_configurable_directory(monkeypatch, tmp_path)
     assert path.parent == tmp_path
     assert path.name.startswith("window-123-")
     assert path.suffix == ".png"
+
+
+def test_capture_window_can_embed_data_url(monkeypatch, tmp_path):
+    from desktop_control import capture
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=1,
+        title="Target",
+        process_id=10,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 10, 10),
+        visible=True,
+        minimized=False,
+    )
+    image = Image.new("RGB", (10, 10), "white")
+    image.putpixel((5, 5), (0, 0, 0))
+
+    monkeypatch.setattr(capture, "get_window", lambda hwnd: target)
+    monkeypatch.setattr(capture, "_capture_with_backend", lambda bbox, backend: (image, "test", []))
+
+    payload = capture_window(1, tmp_path / "shot.png", include_image_data=True)
+
+    assert payload["mime_type"] == "image/png"
+    assert str(payload["url"]).startswith("data:image/png;base64,")
+    assert payload["image"]["bytes"] > 0

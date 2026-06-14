@@ -61,6 +61,7 @@ desktop-control list-apps --query notepad --pretty
 desktop-control launch-app --app notepad.exe --wait-query Notepad --pretty
 desktop-control approve-app --process-name notepad.exe --pretty
 desktop-control observe --query notepad --include-text --pretty
+desktop-control observe --query notepad --inline-screenshot --pretty
 desktop-control view --ref-file .tmp\window-ref.json --pretty
 desktop-control get-window --window-id <hwnd> --pretty
 desktop-control activate-window --window-id <hwnd> --pretty
@@ -92,6 +93,8 @@ Each returned window includes `window_ref`. If an action reports a stale or miss
 The stdio and named-pipe servers accept JSON-RPC methods `list_apps`, `launch_app`, `list_windows`, `observe`, `view`, `agent_run`, `run`, `agent_step`, `act`, `perform_actions`, `get_window`, `activate_window`, `get_window_state`, `state`, `screenshot`, `click`, `double_click`, `move`, `scroll`, `drag`, `type_text`, `type`, `key`, `press_key`, `keypress`, `find_elements`, `click_element`, `invoke_element`, `perform_secondary_action`, `set_element_value`, `set_value`, `wait`, `wait_window`, `wait_element`, `recover_window`, and `batch`.
 
 For agent visual grounding, start with `observe` instead of manually listing windows and then calling `get-window-state`. `observe` selects a target by query/ref/id or the foreground window, captures a screenshot by default, can include UI Automation text, and returns the canonical window object and snapshot id for later actions.
+
+Use `--inline-screenshot`, `include_image_data: true`, or `DESKTOP_CONTROL_INLINE_SCREENSHOTS=1` when an agent adapter needs screenshot bytes embedded as `data:image/png;base64,...` URLs. Leave inline screenshots off for fastest local loops that can read the returned screenshot path.
 
 For default agent action execution, use `agent-run`/`agent_run`. It observes the target window, injects the observed window context into OpenAI/Codex-style action JSON, executes the actions immediately, then returns a fresh visual observation and trace timings. Set `strict_snapshot: true` when geometry-level stale-coordinate rejection is required. Use `agent-step`/`agent_step` when the caller already has a fresh observation and wants only action execution. The payload can include `actions`, a single `action`, or a single `type`/`method`, plus the observed `window`; snapshot guards are inherited from the observed window.
 
