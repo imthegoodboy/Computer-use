@@ -271,6 +271,55 @@ def test_rpc_get_window_state_defaults_to_visual_snapshot(monkeypatch):
     assert calls["screenshot"]["hwnd"] == 55
 
 
+def test_rpc_get_window_state_can_inline_screenshot(monkeypatch):
+    from desktop_control import rpc
+    from desktop_control.models import Rect, WindowInfo
+
+    target = WindowInfo(
+        hwnd=54,
+        title="Inline Target",
+        process_id=100,
+        process_name="target.exe",
+        class_name="TargetWindow",
+        rect=Rect(0, 0, 300, 200),
+        visible=True,
+        minimized=False,
+        client_rect=Rect(0, 0, 300, 200),
+    )
+    captured = {}
+
+    monkeypatch.setattr(rpc, "_window_for_action", lambda hwnd, action, activate=False: target)
+
+    def fake_capture_window(hwnd, out_path, backend="auto", include_image_data=False):
+        captured["include_image_data"] = include_image_data
+        return {
+            "path": str(out_path),
+            "mime_type": "image/png",
+            "width": 300,
+            "height": 200,
+            "window_snapshot_id": "snap-inline",
+            "image": {"sha256": "abcdef1234567890"},
+            "url": "data:image/png;base64,abcd" if include_image_data else None,
+        }
+
+    monkeypatch.setattr(rpc, "capture_window", fake_capture_window)
+
+    response = handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "get_window_state",
+            "params": {"window_id": 54, "include_image_data": True},
+        }
+    )
+
+    assert response is not None
+    screenshot = response["result"]["screenshots"][0]
+    assert captured["include_image_data"] is True
+    assert screenshot["id"] == "shot-abcdef1234567890"
+    assert screenshot["url"] == "data:image/png;base64,abcd"
+
+
 def test_rpc_observe_selects_one_query_match(monkeypatch):
     from desktop_control import rpc
     from desktop_control.models import Rect, WindowInfo

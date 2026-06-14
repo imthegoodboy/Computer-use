@@ -13,6 +13,7 @@ This project is an independent implementation. It does not decompile or depend o
 - Capture window state as JSON.
 - Capture a window screenshot.
 - Capture screenshots through selectable `auto`, `mss`, or `pil` backends with checksum and nonblank metadata.
+- Optionally embed screenshots as `data:image/png;base64,...` URLs for portable agent visual loops.
 - Optionally include UI metadata from Windows UI Automation or child HWND fallback.
 - Activate a target window.
 - Move, click, drag, scroll, type text, and press key chords.
@@ -63,6 +64,7 @@ python -m desktop_control launch-app --app notepad.exe --wait-query Notepad --pr
 
 Coordinates are window-relative by default. Use `--space client` for client-area coordinates or `--space screen` for absolute screen coordinates.
 `observe` and `get-window-state` capture a screenshot by default for agent visual grounding; set `DESKTOP_CONTROL_CAPTURE_DIR` or pass `--out` to choose where screenshots are written.
+Use `--inline-screenshot` or set `DESKTOP_CONTROL_INLINE_SCREENSHOTS=1` when an agent adapter needs the screenshot bytes embedded in JSON instead of reading the returned file path.
 
 ## Agent Observe Flow
 
@@ -70,6 +72,7 @@ Use `observe` as the first visual step. It selects exactly one target window by 
 
 ```powershell
 desktop-control observe --query notepad --include-text --pretty
+desktop-control observe --query notepad --inline-screenshot --pretty
 desktop-control view --ref-file .tmp\window-ref.json --pretty
 desktop-control observe --pretty
 ```
@@ -102,7 +105,7 @@ For the default agent loop, use `agent-run`. It observes the target window first
 desktop-control agent-run --file .tmp\agent-run.json --pretty
 ```
 
-Pass `observe_after: false` or `--no-observe-after` only when the caller intentionally wants to skip verification. Set `strict_snapshot: true` when the caller wants geometry-level stale-coordinate rejection inside `agent-run`. Use `agent-step` when the caller already has a fresh observation and wants only to execute actions:
+Pass `observe_after: false` or `--no-observe-after` only when the caller intentionally wants to skip verification. Add `include_image_data: true`, `inline_screenshot: true`, or CLI `--inline-screenshot` when the agent needs portable image URLs in `observation.screenshots[].url`. Set `strict_snapshot: true` when the caller wants geometry-level stale-coordinate rejection inside `agent-run`. Use `agent-step` when the caller already has a fresh observation and wants only to execute actions:
 
 ```json
 {
@@ -148,6 +151,7 @@ Wrapper configuration:
 - `DESKTOP_CONTROL_PYTHON_ARGS`: extra Python launcher args such as `-X utf8`.
 - `DESKTOP_CONTROL_PACKAGE_ROOT`: override package root detection.
 - `DESKTOP_CONTROL_PYTHONPATH_MODE`: `prepend` by default, or `append`, `replace`, `preserve`.
+- `DESKTOP_CONTROL_INLINE_SCREENSHOTS`: set to `1`, `true`, `yes`, or `on` to embed screenshot data URLs in visual RPC/CLI responses.
 - `DESKTOP_CONTROL_PYTHONPATH_EXTRA`: additional paths appended to the wrapper-managed `PYTHONPATH`.
 
 For high-throughput agents, start a warm process instead of launching Python per action:

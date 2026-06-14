@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 AUDIT_LOG_ENV = "DESKTOP_CONTROL_AUDIT_LOG"
-SENSITIVE_KEYS = {"arg", "args", "password", "secret", "text", "token", "value"}
+SENSITIVE_KEYS = {"arg", "args", "data_url", "image_data", "password", "secret", "text", "token", "url", "value"}
 
 
 def _sanitize(value: Any) -> Any:

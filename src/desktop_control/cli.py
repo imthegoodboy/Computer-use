@@ -123,6 +123,8 @@ def command_get_window_state(args: argparse.Namespace) -> dict[str, Any]:
         "screenshot_backend": args.screenshot_backend,
         "activate": args.activate,
     }
+    if args.inline_screenshot:
+        params["include_image_data"] = True
     if args.out:
         params["out"] = args.out
     return build_window_state(params, default_screenshot=True)
@@ -161,6 +163,8 @@ def command_observe(args: argparse.Namespace) -> dict[str, Any]:
         "include_hidden": args.include_hidden,
         "allow_ambiguous": args.allow_ambiguous,
     }
+    if args.inline_screenshot:
+        params["include_image_data"] = True
     if args.query:
         params["query"] = args.query
     if args.out:
@@ -178,7 +182,12 @@ def command_state(args: argparse.Namespace) -> dict[str, Any]:
         "window": window.to_dict(),
     }
     if args.screenshot:
-        payload["screenshot"] = capture_window(args.window_id, args.screenshot, backend=args.screenshot_backend)
+        payload["screenshot"] = capture_window(
+            args.window_id,
+            args.screenshot,
+            backend=args.screenshot_backend,
+            include_image_data=args.inline_screenshot,
+        )
     if args.include_ui:
         payload["ui"] = get_uia_tree(args.window_id, max_depth=args.max_depth, max_nodes=args.max_nodes)
     return payload
@@ -189,7 +198,12 @@ def command_screenshot(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "ok": True,
         "window": window.to_dict(),
-        "screenshot": capture_window(args.window_id, args.out, backend=args.backend),
+        "screenshot": capture_window(
+            args.window_id,
+            args.out,
+            backend=args.backend,
+            include_image_data=args.inline_screenshot,
+        ),
     }
 
 
@@ -513,6 +527,8 @@ def command_agent_step(args: argparse.Namespace) -> dict[str, Any]:
         observe_after: dict[str, Any] = {}
         if args.include_text_after:
             observe_after["include_text"] = True
+        if args.inline_screenshot_after:
+            observe_after["include_image_data"] = True
         params["observe_after"] = observe_after or True
     return execute_agent_step(params)
 
@@ -543,6 +559,8 @@ def command_agent_run(args: argparse.Namespace) -> dict[str, Any]:
         params.setdefault("out", args.out)
     if args.no_screenshot:
         params.setdefault("include_screenshot", False)
+    if args.inline_screenshot:
+        params["include_image_data"] = True
     if args.include_text or args.include_ui:
         params.setdefault("include_text", True)
     if args.include_text_after:
@@ -633,6 +651,7 @@ def build_parser() -> argparse.ArgumentParser:
     get_state_parser.add_argument("--no-screenshot", action="store_true")
     get_state_parser.add_argument("--include-text", action="store_true")
     get_state_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    get_state_parser.add_argument("--inline-screenshot", action="store_true", help="Embed screenshot as a data URL")
     get_state_parser.add_argument("--max-depth", type=int, default=3)
     get_state_parser.add_argument("--max-nodes", type=int, default=200)
     get_state_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
@@ -659,6 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
     observe_parser.add_argument("--no-screenshot", action="store_true")
     observe_parser.add_argument("--include-text", action="store_true")
     observe_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    observe_parser.add_argument("--inline-screenshot", action="store_true", help="Embed screenshot as a data URL")
     observe_parser.add_argument("--max-depth", type=int, default=3)
     observe_parser.add_argument("--max-nodes", type=int, default=200)
     observe_parser.add_argument("--screenshot-backend", choices=["auto", "pil", "mss"], default="auto")
@@ -669,6 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser = subparsers.add_parser("state", help="Get window state")
     state_parser.add_argument("--window-id", type=int, required=True)
     state_parser.add_argument("--include-ui", action="store_true")
+    state_parser.add_argument("--inline-screenshot", action="store_true", help="Embed screenshot as a data URL")
     state_parser.add_argument("--max-depth", type=int, default=3)
     state_parser.add_argument("--max-nodes", type=int, default=200)
     state_parser.add_argument("--screenshot", help="Optional screenshot output path")
@@ -681,6 +702,7 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot_parser.add_argument("--window-id", type=int, required=True)
     screenshot_parser.add_argument("--out", required=True)
     screenshot_parser.add_argument("--backend", choices=["auto", "pil", "mss"], default="auto")
+    screenshot_parser.add_argument("--inline-screenshot", action="store_true", help="Embed screenshot as a data URL")
     screenshot_parser.add_argument("--activate", action="store_true")
     screenshot_parser.add_argument("--pretty", action="store_true")
     screenshot_parser.set_defaults(func=command_screenshot)
@@ -874,6 +896,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_step_parser.add_argument("--continue-on-error", action="store_true")
     agent_step_parser.add_argument("--observe-after", action="store_true")
     agent_step_parser.add_argument("--include-text-after", action="store_true")
+    agent_step_parser.add_argument("--inline-screenshot-after", action="store_true", help="Embed observe-after screenshot as a data URL")
     agent_step_parser.add_argument("--pretty", action="store_true")
     agent_step_parser.set_defaults(func=command_agent_step)
 
@@ -891,6 +914,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_run_parser.add_argument("--no-screenshot", action="store_true")
     agent_run_parser.add_argument("--include-text", action="store_true")
     agent_run_parser.add_argument("--include-ui", action="store_true", help="Alias for --include-text")
+    agent_run_parser.add_argument("--inline-screenshot", action="store_true", help="Embed screenshots as data URLs")
     agent_run_parser.add_argument("--include-text-after", action="store_true")
     agent_run_parser.add_argument("--continue-on-error", action="store_true")
     agent_run_parser.add_argument("--no-observe-after", action="store_true")

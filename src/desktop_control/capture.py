@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import time
@@ -92,6 +93,7 @@ def capture_window(
     hwnd: int,
     out_path: str | Path,
     backend: CaptureBackend = "auto",
+    include_image_data: bool = False,
 ) -> dict[str, object]:
     if backend not in {"auto", "pil", "mss"}:
         raise DesktopControlError("invalid_capture_backend", f"Unsupported capture backend: {backend}")
@@ -106,10 +108,11 @@ def capture_window(
     bbox = (window.rect.left, window.rect.top, window.rect.right, window.rect.bottom)
     image, resolved_backend, attempt_errors = _capture_with_backend(bbox, backend)
     image.save(path)
-    return {
+    payload: dict[str, object] = {
         "path": str(path),
         "backend": resolved_backend,
         "requested_backend": backend,
+        "mime_type": "image/png",
         "width": image.width,
         "height": image.height,
         "bbox": {
@@ -122,4 +125,7 @@ def capture_window(
         "image": _image_metadata(image, path),
         "fallback_errors": attempt_errors,
     }
+    if include_image_data:
+        payload["url"] = "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    return payload
 
