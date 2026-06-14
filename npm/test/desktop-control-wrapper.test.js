@@ -58,4 +58,6 @@ test('package bin aliases point at the same executable', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   assert.equal(packageJson.bin['desktop-control'], './npm/bin/desktop-control.js');
   assert.equal(packageJson.bin['desktop-control-tool'], './npm/bin/desktop-control.js');
+  assert.equal(packageJson.main, './npm/lib/client.js');
+  assert.equal(packageJson.exports['.'], './npm/lib/client.js');
 });

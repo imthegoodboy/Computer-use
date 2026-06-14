@@ -60,6 +60,15 @@ try {
         throw "agent-run help did not expose the expected command/options"
     }
 
+    $sdkOutput = node -e "const sdk = require('./npm/lib/client.js'); console.log(JSON.stringify({ok: !!sdk.createClient && !!sdk.DesktopControlClient}))"
+    if ($LASTEXITCODE -ne 0) {
+        throw "desktop-control SDK require check exited with $LASTEXITCODE"
+    }
+    $sdk = $sdkOutput | ConvertFrom-Json
+    if (-not $sdk.ok) {
+        throw "desktop-control SDK did not expose expected exports"
+    }
+
     "npm CLI smoke passed"
 }
 finally {
